@@ -6,13 +6,13 @@ import {
   SendIcon,
   ShieldCheckIcon,
   UsersIcon,
-  Component,
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from "next/image";
+import type { ComponentType } from 'react';
 
 
-const BavardPage: Component = () => {
+const BavardPage: ComponentType = () => {
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="px-4 lg:px-6 h-14 flex items-center">
