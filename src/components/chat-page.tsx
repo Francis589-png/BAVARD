@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -23,12 +23,14 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
 import Link from "next/link";
+import { StoryViewer } from "./story-viewer";
 
 interface ChatUser {
   id: string;
@@ -48,6 +50,17 @@ interface Message {
     fileName?: string;
 }
 
+interface Story {
+    id: string;
+    userId: string;
+    mediaUrl: string;
+    mediaType: 'image';
+    createdAt: Timestamp;
+    expiresAt: Timestamp;
+    userAvatar: string;
+    userName: string;
+}
+
 
 export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -61,6 +74,10 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  
+  const [stories, setStories] = useState<Story[]>([]);
+  const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
+
 
   const router = useRouter();
   const { toast } = useToast();
@@ -91,14 +108,15 @@ export default function ChatPage() {
         if (contactIds.length === 0) {
             setContacts([]);
             setSelectedContact(null);
+            setStories([]);
             return;
         }
 
         // Fetch user profiles for the contact IDs
         const usersCollection = collection(db, "users");
-        const q = query(usersCollection, where("id", "in", contactIds));
+        const qUsers = query(usersCollection, where("id", "in", contactIds));
         
-        const unsubscribeUsers = onSnapshot(q, (querySnapshot) => {
+        const unsubscribeUsers = onSnapshot(qUsers, (querySnapshot) => {
           const users: ChatUser[] = [];
           querySnapshot.forEach((doc) => {
             const data = doc.data();
@@ -118,12 +136,43 @@ export default function ChatPage() {
               setSelectedContact(contactToSelect);
           }
         });
-        return () => unsubscribeUsers();
+        
+         // Fetch active stories for contacts
+        const now = Timestamp.now();
+        const storiesCollection = collection(db, "stories");
+        const qStories = query(storiesCollection, 
+            where("userId", "in", contactIds), 
+            where("expiresAt", ">", now),
+            orderBy("expiresAt", "desc")
+        );
+
+        const unsubscribeStories = onSnapshot(qStories, async (storySnapshot) => {
+            const fetchedStories: Story[] = [];
+            for (const storyDoc of storySnapshot.docs) {
+                const storyData = storyDoc.data();
+                const contact = contacts.find(c => c.id === storyData.userId);
+                if (contact) {
+                    fetchedStories.push({
+                        id: storyDoc.id,
+                        ...storyData,
+                        userAvatar: contact.avatar,
+                        userName: contact.name,
+                    } as Story);
+                }
+            }
+            setStories(fetchedStories);
+        });
+
+
+        return () => {
+            unsubscribeUsers();
+            unsubscribeStories();
+        };
       });
 
       return () => unsubscribeContacts();
     }
-  }, [user, selectedContact]);
+  }, [user, selectedContact]); // Re-run when contacts change
 
    useEffect(() => {
     if (selectedContact) {
@@ -350,6 +399,7 @@ export default function ChatPage() {
       }
   };
 
+  const contactsWithStories = contacts.filter(contact => stories.some(story => story.userId === contact.id));
 
   if (loading || !user) {
     return (
@@ -372,6 +422,10 @@ export default function ChatPage() {
                 <SidebarContent>
                     <SidebarGroup>
                        <SidebarGroupLabel>Actions</SidebarGroupLabel>
+                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => router.push('/story/create')}>
+                            <PlusCircle className="mr-2 h-4 w-4" />
+                            Add to Story
+                        </Button>
                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setIsAddContactOpen(true)}>
                             <UserPlus className="mr-2 h-4 w-4" />
                             Add Contact by Email
@@ -383,6 +437,23 @@ export default function ChatPage() {
                           </Button>
                         </Link>
                     </SidebarGroup>
+                    <SidebarSeparator />
+                     {contactsWithStories.length > 0 && (
+                        <SidebarGroup>
+                            <SidebarGroupLabel>Stories</SidebarGroupLabel>
+                            <div className="flex gap-4 px-2 overflow-x-auto pb-2">
+                                {contactsWithStories.map(contact => (
+                                    <div key={contact.id} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => setViewingStoryForUser(contact)}>
+                                        <Avatar className="h-12 w-12 border-2 border-primary">
+                                            <AvatarImage src={contact.avatar} />
+                                            <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-xs w-14 truncate text-center">{contact.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </SidebarGroup>
+                     )}
                     <SidebarGroup>
                        <SidebarGroupLabel>Contacts</SidebarGroupLabel>
                     </SidebarGroup>
@@ -510,6 +581,12 @@ export default function ChatPage() {
             onOpenChange={setIsAddContactOpen}
             onAddContact={handleAddContact}
         />
+        {viewingStoryForUser && (
+            <StoryViewer 
+                stories={stories.filter(s => s.userId === viewingStoryForUser.id)}
+                onClose={() => setViewingStoryForUser(null)}
+            />
+        )}
     </SidebarProvider>
   );
 }
