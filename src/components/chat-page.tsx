@@ -141,60 +141,71 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-
+  
     const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     if (allUserIds.length === 0) {
-        setStories([]);
-        return;
-    };
-
-    const storiesCollection = collection(db, "stories");
-    const now = Timestamp.now();
-
-    const qStories = query(storiesCollection, 
-        where("userId", "in", allUserIds),
+      setStories([]);
+      return;
+    }
+  
+    const unsubscribes: (() => void)[] = [];
+    const allStories: Record<string, Story> = {};
+  
+    allUserIds.forEach(userId => {
+      const storiesCollection = collection(db, "stories");
+      const now = Timestamp.now();
+      const qStories = query(
+        storiesCollection,
+        where("userId", "==", userId),
         where("expiresAt", ">", now)
-    );
-
-    const unsubscribe = onSnapshot(qStories, async (snapshot) => {
-        const fetchedStories: Story[] = [];
-        for (const storyDoc of snapshot.docs) {
-            const storyData = storyDoc.data();
-            const storyUserId = storyData.userId;
-            
-            let storyUser: { id: string, name: string, avatar: string };
-            
-            if (storyUserId === user.uid) {
-                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || ''};
-            } else {
-                const contact = contacts.find(c => c.id === storyUserId);
-                if (contact) {
-                    storyUser = contact;
-                } else {
-                    // It's possible the contact isn't loaded yet, try to fetch user doc
-                    const userDocSnap = await getDoc(doc(db, "users", storyUserId));
-                    if (userDocSnap.exists()) {
-                        const userData = userDocSnap.data();
-                        storyUser = { id: userData.id, name: userData.name, avatar: userData.avatar };
-                    } else {
-                       continue; // Skip if user not found
-                    }
-                }
-            }
-
-            fetchedStories.push({
-                id: storyDoc.id,
-                ...storyData,
-                userAvatar: storyUser.avatar,
-                userName: storyUser.name,
-            } as Story);
-        }
+      );
+  
+      const unsubscribe = onSnapshot(qStories, async (snapshot) => {
+        let storiesChanged = false;
         
-        fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setStories(fetchedStories);
-    });
+        // First, handle removals for this user
+        const newStoryIds = new Set(snapshot.docs.map(d => d.id));
+        Object.keys(allStories).forEach(storyId => {
+            if (allStories[storyId].userId === userId && !newStoryIds.has(storyId)) {
+                delete allStories[storyId];
+                storiesChanged = true;
+            }
+        });
 
-    return () => unsubscribe();
+        // Then, handle additions/updates
+        for (const storyDoc of snapshot.docs) {
+          if (!allStories[storyDoc.id]) {
+            const storyData = storyDoc.data();
+            let storyUser;
+  
+            if (storyData.userId === user.uid) {
+              storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+            } else {
+              storyUser = contacts.find(c => c.id === storyData.userId) || { id: storyData.userId, name: 'Unknown', avatar: '' };
+            }
+  
+            allStories[storyDoc.id] = {
+              id: storyDoc.id,
+              ...storyData,
+              userAvatar: storyUser.avatar,
+              userName: storyUser.name,
+            } as Story;
+            storiesChanged = true;
+          }
+        }
+  
+        if (storiesChanged) {
+            const storiesArray = Object.values(allStories).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            setStories(storiesArray);
+        }
+      });
+  
+      unsubscribes.push(unsubscribe);
+    });
+  
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
   }, [user, contacts]);
 
 
@@ -627,5 +638,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
