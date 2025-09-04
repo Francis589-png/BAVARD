@@ -3,6 +3,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import { useRouter } from "next/navigation";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +54,8 @@ function GoogleIcon() {
 
 
 export function LoginForm() {
+  const router = useRouter();
+  const { toast } = useToast();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -54,14 +64,41 @@ export function LoginForm() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // TODO: Implement login logic
-    console.log(values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    try {
+      await signInWithEmailAndPassword(auth, values.email, values.password);
+      toast({
+        title: "Success",
+        description: "Signed in successfully.",
+      });
+      router.push("/chat");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Invalid email or password.",
+      });
+      console.error(error);
+    }
   }
   
-  function onGoogleSignIn() {
-    // TODO: Implement Google Sign-In
-    console.log("Signing in with Google");
+  async function onGoogleSignIn() {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      toast({
+        title: "Success",
+        description: "Signed in successfully with Google.",
+      });
+      router.push("/chat");
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Could not sign in with Google. Please try again.",
+      });
+      console.error("Google Sign-In Error:", error);
+    }
   }
 
 
