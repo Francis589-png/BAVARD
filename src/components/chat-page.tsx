@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -24,11 +24,11 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
 } from "@/components/ui/sidebar";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, collectionGroup, writeBatch, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
-import { textToSpeech } from "@/ai/flows/tts-flow";
+import Link from "next/link";
 
 interface ChatUser {
   id: string;
@@ -371,11 +371,20 @@ export default function ChatPage() {
                 </SidebarHeader>
                 <SidebarContent>
                     <SidebarGroup>
-                       <SidebarGroupLabel>Contacts</SidebarGroupLabel>
+                       <SidebarGroupLabel>Actions</SidebarGroupLabel>
                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setIsAddContactOpen(true)}>
                             <UserPlus className="mr-2 h-4 w-4" />
-                            Add Contact
+                            Add Contact by Email
                         </Button>
+                        <Link href="/explore" passHref>
+                          <Button variant="ghost" size="sm" className="w-full justify-start">
+                              <Compass className="mr-2 h-4 w-4" />
+                              Explore New Friends
+                          </Button>
+                        </Link>
+                    </SidebarGroup>
+                    <SidebarGroup>
+                       <SidebarGroupLabel>Contacts</SidebarGroupLabel>
                     </SidebarGroup>
                     <SidebarMenu>
                         {contacts.map((contact) => (
@@ -489,8 +498,8 @@ export default function ChatPage() {
                         <h2 className="text-2xl font-semibold mt-4">Select a contact to start chatting</h2>
                         <p className="text-muted-foreground mt-2">
                           {contacts.length > 0
-                            ? "Choose someone from the sidebar."
-                            : "You don't have any contacts yet. Click 'Add Contact' to find people."}
+                            ? "Choose someone from your contacts list."
+                            : "You don't have any contacts yet. Add one by email or explore to find new friends."}
                         </p>
                     </div>
                 )}
