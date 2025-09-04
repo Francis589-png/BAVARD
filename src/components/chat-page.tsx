@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, Send, LogOut, MessageCircle, User as UserIcon } from "lucide-react";
@@ -22,27 +22,35 @@ import {
   SidebarInset,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc } from "firebase/firestore";
 
-// Dummy data for now
-const contacts = [
-  { id: "2", name: "Jane Doe", avatar: "https://i.pravatar.cc/150?u=jane", online: true },
-  { id: "3", name: "Peter Jones", avatar: "https://i.pravatar.cc/150?u=peter", online: false },
-  { id: "4", name: "Mary Smith", avatar: "https://i.pravatar.cc/150?u=mary", online: true },
-];
+interface ChatUser {
+  id: string;
+  name: string;
+  avatar: string;
+  online: boolean;
+  email: string;
+}
 
-const messages = [
-    { id: "1", senderId: "2", text: "Hey! How are you?", timestamp: new Date(Date.now() - 1000 * 60 * 5) },
-    { id: "2", senderId: "1", text: "I'm good, thanks! How about you?", timestamp: new Date(Date.now() - 1000 * 60 * 4) },
-    { id: "3", senderId: "2", text: "Doing great. Just working on this chat app.", timestamp: new Date(Date.now() - 1000 * 60 * 3) },
-];
+interface Message {
+    id: string;
+    senderId: string;
+    text: string;
+    timestamp: any;
+}
 
 
 export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedContact, setSelectedContact] = useState(contacts[0]);
+  const [contacts, setContacts] = useState<ChatUser[]>([]);
+  const [selectedContact, setSelectedContact] = useState<ChatUser | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState("");
   const router = useRouter();
   const { toast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -56,6 +64,59 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [router]);
+
+  useEffect(() => {
+    if (user) {
+      const usersCollection = collection(db, "users");
+      const q = query(usersCollection, where("id", "!=", user.uid));
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const users: ChatUser[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          users.push({
+            id: data.id,
+            name: data.name,
+            avatar: data.avatar,
+            online: data.online, // This would need a presence system like RTDB
+            email: data.email
+          });
+        });
+        setContacts(users);
+        if (!selectedContact && users.length > 0) {
+            setSelectedContact(users[0]);
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [user, selectedContact]);
+
+  useEffect(() => {
+    if (user && selectedContact) {
+      const chatId = [user.uid, selectedContact.id].sort().join("_");
+      const messagesCollection = collection(db, "chats", chatId, "messages");
+      const q = query(messagesCollection, orderBy("timestamp", "asc"));
+
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const msgs: Message[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            msgs.push({
+                id: doc.id,
+                text: data.text,
+                senderId: data.senderId,
+                timestamp: data.timestamp?.toDate() ?? new Date()
+            });
+        });
+        setMessages(msgs);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, selectedContact]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
 
   const handleSignOut = async () => {
     try {
@@ -74,6 +135,30 @@ export default function ChatPage() {
       console.error("Sign Out Error:", error);
     }
   };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newMessage.trim() === "" || !user || !selectedContact) return;
+
+    const chatId = [user.uid, selectedContact.id].sort().join("_");
+    const messagesCollection = collection(db, "chats", chatId, "messages");
+
+    try {
+        await addDoc(messagesCollection, {
+            text: newMessage,
+            senderId: user.uid,
+            timestamp: serverTimestamp(),
+        });
+        setNewMessage("");
+    } catch (error) {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to send message. Please try again.",
+        });
+        console.error("Send Message Error:", error);
+    }
+  }
 
   if (loading || !user) {
     return (
@@ -99,7 +184,7 @@ export default function ChatPage() {
                         <SidebarMenuItem key={contact.id}>
                             <SidebarMenuButton
                             onClick={() => setSelectedContact(contact)}
-                            isActive={selectedContact.id === contact.id}
+                            isActive={selectedContact?.id === contact.id}
                             className="justify-start w-full"
                             >
                             <Avatar className="h-8 w-8">
@@ -107,7 +192,7 @@ export default function ChatPage() {
                                 <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <span>{contact.name}</span>
-                             {contact.online && <div className="w-2 h-2 rounded-full bg-green-500 ml-auto" />}
+                             {/* {contact.online && <div className="w-2 h-2 rounded-full bg-green-500 ml-auto" />} */}
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                         ))}
@@ -130,6 +215,7 @@ export default function ChatPage() {
             </Sidebar>
 
             <SidebarInset>
+             {selectedContact ? (
                 <div className="flex flex-col h-full">
                     <header className="flex items-center p-4 border-b">
                          <SidebarTrigger className="md:hidden" />
@@ -139,7 +225,7 @@ export default function ChatPage() {
                         </Avatar>
                         <div className="ml-4">
                             <h2 className="text-lg font-semibold">{selectedContact.name}</h2>
-                            <p className="text-sm text-muted-foreground">{selectedContact.online ? 'Online' : 'Offline'}</p>
+                            {/* <p className="text-sm text-muted-foreground">{selectedContact.online ? 'Online' : 'Offline'}</p> */}
                         </div>
                     </header>
 
@@ -148,21 +234,36 @@ export default function ChatPage() {
                            <div key={message.id} className={`flex ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                <div className={`rounded-lg px-4 py-2 max-w-sm ${message.senderId === user.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                                    <p>{message.text}</p>
-                                   <p className="text-xs text-right opacity-70 mt-1">{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                   <p className="text-xs text-right opacity-70 mt-1">
+                                    {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                   </p>
                                </div>
                            </div>
                        ))}
+                       <div ref={messagesEndRef} />
                     </main>
 
                      <footer className="p-4 border-t">
-                        <div className="relative">
-                            <Input placeholder="Type a message..." className="pr-12" />
-                            <Button size="icon" className="absolute top-1/2 right-2 -translate-y-1/2">
+                        <form onSubmit={handleSendMessage} className="relative">
+                            <Input 
+                                placeholder="Type a message..." 
+                                className="pr-12"
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                             />
+                            <Button type="submit" size="icon" className="absolute top-1/2 right-2 -translate-y-1/2">
                                 <Send className="w-5 h-5" />
                             </Button>
-                        </div>
+                        </form>
                     </footer>
                 </div>
+                 ) : (
+                    <div className="flex flex-col h-full items-center justify-center">
+                        <MessageCircle className="w-24 h-24 text-muted-foreground" />
+                        <h2 className="text-2xl font-semibold mt-4">Select a chat</h2>
+                        <p className="text-muted-foreground mt-2">Choose a person from the sidebar to start a conversation.</p>
+                    </div>
+                )}
             </SidebarInset>
         </div>
     </SidebarProvider>

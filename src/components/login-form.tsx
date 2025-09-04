@@ -8,8 +8,10 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  User,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,20 @@ function GoogleIcon() {
   );
 }
 
+const addUserToFirestore = async (user: User) => {
+    const userRef = doc(db, "users", user.uid);
+    const userDoc = await getDoc(userRef);
+    if (!userDoc.exists()) {
+      await setDoc(userRef, {
+        id: user.uid,
+        name: user.displayName,
+        email: user.email,
+        avatar: user.photoURL,
+        online: true, // You'd need a presence system for this to be accurate
+      });
+    }
+};
+
 
 export function LoginForm() {
   const router = useRouter();
@@ -85,7 +101,8 @@ export function LoginForm() {
   async function onGoogleSignIn() {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      await addUserToFirestore(result.user);
       toast({
         title: "Success",
         description: "Signed in successfully with Google.",
