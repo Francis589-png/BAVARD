@@ -137,7 +137,7 @@ export default function ExplorePage() {
                             <CardContent className="flex flex-col items-center justify-center p-6">
                                 <Avatar className="h-20 w-20 mb-4">
                                     <AvatarImage src={u.avatar} alt={u.name} />
-                                    <AvatarFallback>{u.name.charAt(0)}</AvatarFallback>
+                                    <AvatarFallback>{u.name?.charAt(0) || u.email?.charAt(0) || 'U'}</AvatarFallback>
                                 </Avatar>
                                 <h3 className="font-semibold text-lg text-center truncate w-full">{u.name}</h3>
                                 <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>
