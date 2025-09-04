@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,9 @@ import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
 import Link from "next/link";
 import { StoryViewer } from "./story-viewer";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 
 interface ChatUser {
   id: string;
@@ -83,6 +86,7 @@ export default function ChatPage() {
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isOnline = useOnlineStatus();
 
 
   useEffect(() => {
@@ -107,13 +111,14 @@ export default function ChatPage() {
 
             if (contactIds.length > 0) {
                 const usersCollection = collection(db, "users");
-                const qUsers = query(usersCollection, where("id", "in", contactIds));
-                
-                onSnapshot(qUsers, (querySnapshot) => {
-                    const fetchedContacts: ChatUser[] = [];
+                // Although we have contactIds, we listen to all users to get real-time presence updates
+                // and then filter locally. This is less efficient but ensures we have data for story authoring.
+                // A better approach for larger apps would be a dedicated presence solution.
+                 onSnapshot(usersCollection, (querySnapshot) => {
+                    const allUsers: ChatUser[] = [];
                     querySnapshot.forEach((doc) => {
                         const data = doc.data();
-                        fetchedContacts.push({
+                        allUsers.push({
                           id: data.id,
                           name: data.name,
                           avatar: data.avatar,
@@ -121,6 +126,8 @@ export default function ChatPage() {
                           email: data.email
                         });
                     });
+                    
+                    const fetchedContacts = allUsers.filter(u => contactIds.includes(u.id));
                     setContacts(fetchedContacts);
 
                     if (!selectedContact || !contactIds.includes(selectedContact.id)) {
@@ -141,55 +148,69 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-
-    const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
-    if (allUserIds.length === 0) {
+    
+    // Create a combined list of the current user's ID and their contacts' IDs
+    const userIdsToFetch = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
+    
+    if (userIdsToFetch.length === 0) {
         setStories([]);
         return;
     }
 
     const now = Timestamp.now();
-    const unsubscribes = allUserIds.map(userId => {
-        const storiesCollection = collection(db, "stories");
-        const qStories = query(
-            storiesCollection,
-            where("userId", "==", userId),
-            where("expiresAt", ">", now)
-        );
+    const storiesCollection = collection(db, "stories");
+    const qStories = query(
+        storiesCollection,
+        where("userId", "in", userIdsToFetch),
+        where("expiresAt", ">", now)
+    );
+    
+    const unsubscribeStories = onSnapshot(qStories, async (snapshot) => {
+        const fetchedStories: Story[] = [];
+        const userPromises = snapshot.docs.map(async (storyDoc) => {
+            const storyData = storyDoc.data();
+            let storyUser: Partial<ChatUser> = {};
 
-        return onSnapshot(qStories, async (snapshot) => {
-            const fetchedStories: Story[] = [];
-             for (const storyDoc of snapshot.docs) {
-                const storyData = storyDoc.data();
-                let storyUser;
-
-                if (storyData.userId === user.uid) {
-                    storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+            if (storyData.userId === user.uid) {
+                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+            } else {
+                // Find contact in state first
+                const contact = contacts.find(c => c.id === storyData.userId);
+                if (contact) {
+                    storyUser = contact;
                 } else {
-                    const contact = contacts.find(c => c.id === storyData.userId);
-                    storyUser = contact || { id: storyData.userId, name: 'Unknown', avatar: '' };
+                    // If not found (e.g., race condition), fetch from DB
+                    const userDocRef = doc(db, 'users', storyData.userId);
+                    const userDoc = await getDoc(userDocRef);
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        storyUser = {
+                            id: userData.id,
+                            name: userData.name,
+                            avatar: userData.avatar,
+                        };
+                    } else {
+                        storyUser = { id: storyData.userId, name: 'Unknown', avatar: '' };
+                    }
                 }
-                
-                fetchedStories.push({
-                    id: storyDoc.id,
-                    ...storyData,
-                    userAvatar: storyUser.avatar,
-                    userName: storyUser.name,
-                } as Story);
             }
             
-            setStories(prevStories => {
-                // Filter out old stories from this user
-                const otherStories = prevStories.filter(s => s.userId !== userId);
-                // Combine with new stories
-                const newStories = [...otherStories, ...fetchedStories];
-                // Sort
-                return newStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            });
+            fetchedStories.push({
+                id: storyDoc.id,
+                ...storyData,
+                userAvatar: storyUser.avatar,
+                userName: storyUser.name,
+            } as Story);
         });
+
+        await Promise.all(userPromises);
+
+        // Sort stories by creation date
+        fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setStories(fetchedStories);
     });
 
-    return () => unsubscribes.forEach(unsub => unsub());
+    return () => unsubscribeStories();
   }, [user, contacts]);
 
 
@@ -530,6 +551,15 @@ export default function ChatPage() {
                     </header>
 
                     <main className="flex-1 p-4 space-y-4 overflow-y-auto">
+                        {!isOnline && (
+                            <Alert variant="destructive">
+                                <WifiOff className="h-4 w-4" />
+                                <AlertTitle>You are offline</AlertTitle>
+                                <AlertDescription>
+                                    Your messages will be sent when you reconnect.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                        {messages.map((message) => (
                            <div key={message.id} className={`flex ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                <div className={`rounded-lg px-4 py-2 max-w-sm ${message.senderId === user.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
@@ -557,7 +587,7 @@ export default function ChatPage() {
 
                      <footer className="p-4 border-t">
                         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()}>
+                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline}>
                                 <Paperclip className="w-5 h-5" />
                                 <span className="sr-only">Attach file</span>
                             </Button>
@@ -570,18 +600,19 @@ export default function ChatPage() {
                                 onMouseUp={stopRecording}
                                 onTouchStart={startRecording}
                                 onTouchEnd={stopRecording}
+                                disabled={!isOnline}
                             >
                                 <Mic className="w-5 h-5" />
                                 <span className="sr-only">Record voice message</span>
                             </Button>
                             <Input 
-                                placeholder="Type a message..." 
+                                placeholder={isOnline ? "Type a message..." : "You are offline"}
                                 className="flex-1"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
-                                disabled={uploading || isRecording}
+                                disabled={uploading || isRecording || !isOnline}
                              />
-                            <Button type="submit" size="icon" disabled={uploading || isRecording}>
+                            <Button type="submit" size="icon" disabled={uploading || isRecording || !isOnline}>
                                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             </Button>
                         </form>
@@ -589,6 +620,15 @@ export default function ChatPage() {
                 </div>
                  ) : (
                     <div className="flex flex-col h-full items-center justify-center text-center p-4">
+                        {!isOnline && (
+                            <Alert variant="destructive" className="mb-4">
+                                <WifiOff className="h-4 w-4" />
+                                <AlertTitle>You are offline</AlertTitle>
+                                <AlertDescription>
+                                    Please check your internet connection.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                         <MessageCircle className="w-24 h-24 text-muted-foreground" />
                         <h2 className="text-2xl font-semibold mt-4">Select a contact to start chatting</h2>
                         <p className="text-muted-foreground mt-2">
@@ -614,9 +654,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
-
-    
-
-    
