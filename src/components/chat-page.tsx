@@ -141,45 +141,55 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-  
+
     const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     if (allUserIds.length === 0) {
         setStories([]);
         return;
     }
 
-    const storiesCollection = collection(db, "stories");
     const now = Timestamp.now();
-    const qStories = query(
-        storiesCollection,
-        where("userId", "in", allUserIds),
-        where("expiresAt", ">", now)
-    );
+    const unsubscribes = allUserIds.map(userId => {
+        const storiesCollection = collection(db, "stories");
+        const qStories = query(
+            storiesCollection,
+            where("userId", "==", userId),
+            where("expiresAt", ">", now)
+        );
 
-    const unsubscribe = onSnapshot(qStories, async (snapshot) => {
-        const fetchedStories: Story[] = [];
-        for (const storyDoc of snapshot.docs) {
-            const storyData = storyDoc.data();
-            let storyUser;
+        return onSnapshot(qStories, async (snapshot) => {
+            const fetchedStories: Story[] = [];
+             for (const storyDoc of snapshot.docs) {
+                const storyData = storyDoc.data();
+                let storyUser;
 
-            if (storyData.userId === user.uid) {
-                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
-            } else {
-                const contact = contacts.find(c => c.id === storyData.userId);
-                storyUser = contact || { id: storyData.userId, name: 'Unknown', avatar: '' };
+                if (storyData.userId === user.uid) {
+                    storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+                } else {
+                    const contact = contacts.find(c => c.id === storyData.userId);
+                    storyUser = contact || { id: storyData.userId, name: 'Unknown', avatar: '' };
+                }
+                
+                fetchedStories.push({
+                    id: storyDoc.id,
+                    ...storyData,
+                    userAvatar: storyUser.avatar,
+                    userName: storyUser.name,
+                } as Story);
             }
             
-            fetchedStories.push({
-                id: storyDoc.id,
-                ...storyData,
-                userAvatar: storyUser.avatar,
-                userName: storyUser.name,
-            } as Story);
-        }
-        setStories(fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+            setStories(prevStories => {
+                // Filter out old stories from this user
+                const otherStories = prevStories.filter(s => s.userId !== userId);
+                // Combine with new stories
+                const newStories = [...otherStories, ...fetchedStories];
+                // Sort
+                return newStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            });
+        });
     });
 
-    return () => unsubscribe();
+    return () => unsubscribes.forEach(unsub => unsub());
   }, [user, contacts]);
 
 
@@ -604,5 +614,7 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
 
     
