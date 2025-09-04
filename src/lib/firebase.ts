@@ -5,13 +5,12 @@ import { initializeApp } from "firebase/app";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  "projectId": "bavard-rk2yf",
-  "appId": "1:568170080990:web:1a6f7288174ee7a72e704f",
-  "storageBucket": "bavard-rk2yf.firebasestorage.app",
-  "apiKey": "AIzaSyCnkv3AtU79kCRarXsBK0-T-9gJw27YOvw",
-  "authDomain": "bavard-rk2yf.firebaseapp.com",
-  "measurementId": "",
-  "messagingSenderId": "568170080990"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase
