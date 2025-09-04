@@ -4,10 +4,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  updateProfile,
   User,
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -33,8 +36,11 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { MessageCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
 
-const formSchema = z.object({
+
+const loginSchema = z.object({
   email: z.string().email({
     message: "Please enter a valid email address.",
   }),
@@ -42,6 +48,17 @@ const formSchema = z.object({
     message: "Password must be at least 6 characters.",
   }),
 });
+
+const signupSchema = z.object({
+    name: z.string().min(2, { message: "Name must be at least 2 characters."}),
+    email: z.string().email({
+        message: "Please enter a valid email address.",
+    }),
+    password: z.string().min(6, {
+        message: "Password must be at least 6 characters.",
+    }),
+});
+
 
 function GoogleIcon() {
   return (
@@ -63,58 +80,84 @@ const addUserToFirestore = async (user: User) => {
         name: user.displayName,
         email: user.email,
         avatar: user.photoURL,
-        online: true, // You'd need a presence system for this to be accurate
+        online: true,
       });
     }
 };
 
 
 export function LoginForm() {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+
+  const loginForm = useForm<z.infer<typeof loginSchema>>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
   });
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  const signupForm = useForm<z.infer<typeof signupSchema>>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: { name: "", email: "", password: "" },
+  });
+
+  async function onLogin(values: z.infer<typeof loginSchema>) {
+    setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      toast({
-        title: "Success",
-        description: "Signed in successfully.",
-      });
+      const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
+      await addUserToFirestore(userCredential.user);
+      toast({ title: "Success", description: "Signed in successfully." });
       router.push("/chat");
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Invalid email or password.",
-      });
+      toast({ variant: "destructive", title: "Error", description: "Invalid email or password." });
       console.error(error);
+    } finally {
+        setIsLoading(false);
+    }
+  }
+  
+  async function onSignup(values: z.infer<typeof signupSchema>) {
+    setIsLoading(true);
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+        await updateProfile(userCredential.user, { displayName: values.name });
+        // After updating profile, user object in userCredential is not updated, must reload
+        await userCredential.user.reload();
+        // Now create the user in Firestore with the updated details
+        const updatedUser = auth.currentUser;
+        if(updatedUser) {
+           await addUserToFirestore(updatedUser);
+        }
+        
+        toast({ title: "Success", description: "Account created successfully." });
+        router.push("/chat");
+
+    } catch (error: any) {
+        let description = "Could not create account. Please try again.";
+        if (error.code === 'auth/email-already-in-use') {
+            description = "This email is already in use. Please sign in instead.";
+        }
+       toast({ variant: "destructive", title: "Error", description, });
+       console.error("Sign-up Error:", error);
+    } finally {
+        setIsLoading(false);
     }
   }
   
   async function onGoogleSignIn() {
+    setIsLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       await addUserToFirestore(result.user);
-      toast({
-        title: "Success",
-        description: "Signed in successfully with Google.",
-      });
+      toast({ title: "Success", description: "Signed in successfully with Google." });
       router.push("/chat");
     } catch (error) {
-       toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Could not sign in with Google. Please try again.",
-      });
-      console.error("Google Sign-In Error:", error);
+       toast({ variant: "destructive", title: "Error", description: "Could not sign in with Google. Please try again." });
+       console.error("Google Sign-In Error:", error);
+    } finally {
+        setIsLoading(false);
     }
   }
 
@@ -127,46 +170,109 @@ export function LoginForm() {
         </div>
         <CardTitle className="text-2xl">Welcome to BAVARD</CardTitle>
         <CardDescription>
-          Sign in to your account to start chatting.
+          Sign in or create an account to start chatting.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input placeholder="name@example.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button type="submit" className="w-full">
-              Sign In
-            </Button>
-          </form>
-        </Form>
+        <Tabs value={mode} onValueChange={(value) => setMode(value as "login" | "signup")}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="login">Sign In</TabsTrigger>
+            <TabsTrigger value="signup">Sign Up</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login">
+            <Form {...loginForm}>
+              <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4 pt-4">
+                <FormField
+                  control={loginForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="name@example.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={loginForm.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="••••••••" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sign In
+                </Button>
+              </form>
+            </Form>
+          </TabsContent>
+          <TabsContent value="signup">
+            <Form {...signupForm}>
+              <form onSubmit={signupForm.handleSubmit(onSignup)} className="space-y-4 pt-4">
+                 <FormField
+                  control={signupForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="John Doe" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={signupForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="name@example.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={signupForm.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="••••••••" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Create Account
+                </Button>
+              </form>
+            </Form>
+          </TabsContent>
+        </Tabs>
+        
         <Separator className="my-6" />
-        <Button variant="outline" className="w-full" onClick={onGoogleSignIn}>
-          <GoogleIcon />
+        <Button variant="outline" className="w-full" onClick={onGoogleSignIn} disabled={isLoading}>
+          {isLoading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+             <GoogleIcon />
+          )}
           <span className="ml-2">Sign in with Google</span>
         </Button>
       </CardContent>
