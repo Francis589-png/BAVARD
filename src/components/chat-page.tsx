@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Volume2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import {
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
+import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AddContactDialog } from "./add-contact-dialog";
 import Link from "next/link";
 import { StoryViewer } from "./story-viewer";
@@ -80,6 +81,9 @@ export default function ChatPage() {
   
   const [stories, setStories] = useState<Story[]>([]);
   const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
+
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
 
   const router = useRouter();
@@ -439,6 +443,34 @@ export default function ChatPage() {
       }
   };
 
+  const handlePlayTTS = async (message: Message) => {
+    if (!message.text) return;
+    if (playingAudioId === message.id) {
+        audioRef.current?.pause();
+        setPlayingAudioId(null);
+        return;
+    }
+
+    setPlayingAudioId(message.id);
+    try {
+        const { media } = await textToSpeech(message.text);
+        if (audioRef.current) {
+            audioRef.current.src = media;
+            audioRef.current.play();
+            audioRef.current.onended = () => setPlayingAudioId(null);
+        }
+    } catch (error) {
+        console.error("TTS Error:", error);
+        toast({
+            variant: "destructive",
+            title: "Playback Error",
+            description: "Could not play audio for this message.",
+        });
+        setPlayingAudioId(null);
+    }
+  };
+
+
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
       acc.push({ id: story.userId, name: story.userName, avatar: story.userAvatar});
@@ -561,7 +593,12 @@ export default function ChatPage() {
                             </Alert>
                         )}
                        {messages.map((message) => (
-                           <div key={message.id} className={`flex ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
+                           <div key={message.id} className={`flex items-end gap-2 ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
+                                {message.senderId === user.uid && message.type === 'text' && (
+                                     <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handlePlayTTS(message)} disabled={!isOnline}>
+                                        {playingAudioId === message.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                                    </Button>
+                                )}
                                <div className={`rounded-lg px-4 py-2 max-w-sm ${message.senderId === user.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                                    {message.type === 'text' && <p>{message.text}</p>}
                                    {message.type === 'image' && message.url && (
@@ -580,6 +617,11 @@ export default function ChatPage() {
                                     {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                    </p>
                                </div>
+                                {message.senderId !== user.uid && message.type === 'text' && (
+                                    <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handlePlayTTS(message)} disabled={!isOnline}>
+                                       {playingAudioId === message.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                                   </Button>
+                                )}
                            </div>
                        ))}
                        <div ref={messagesEndRef} />
@@ -651,6 +693,7 @@ export default function ChatPage() {
                 onClose={() => setViewingStoryForUser(null)}
             />
         )}
+        <audio ref={audioRef} className="hidden" />
     </SidebarProvider>
   );
 }
