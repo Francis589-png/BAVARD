@@ -1,5 +1,5 @@
-import VisionaryPage from "@/components/visionary-page";
+import BavardPage from "@/components/bavard-page";
 
 export default function Home() {
-  return <VisionaryPage />;
+  return <BavardPage />;
 }
