@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -21,10 +21,13 @@ import {
   SidebarTrigger,
   SidebarInset,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
 } from "@/components/ui/sidebar";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, collectionGroup, writeBatch, getDocs } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
+import { AddContactDialog } from "./add-contact-dialog";
 
 interface ChatUser {
   id: string;
@@ -53,6 +56,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -74,31 +78,47 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (user) {
-      const usersCollection = collection(db, "users");
-      const q = query(usersCollection, where("id", "!=", user.uid));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const users: ChatUser[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          users.push({
-            id: data.id,
-            name: data.name,
-            avatar: data.avatar,
-            online: data.online, // This would need a presence system like RTDB
-            email: data.email
-          });
-        });
-        setContacts(users);
-        if (!selectedContact && users.length > 0) {
-            // Find the contact if it was previously selected
-            const prevSelected = sessionStorage.getItem('selectedContactId');
-            const contactToSelect = users.find(u => u.id === prevSelected) || users[0];
-            setSelectedContact(contactToSelect);
+      // Listen to the user's contacts subcollection
+      const contactsCollection = collection(db, "users", user.uid, "contacts");
+      const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
+        const contactIds = snapshot.docs.map(doc => doc.id);
+        
+        if (contactIds.length === 0) {
+            setContacts([]);
+            setSelectedContact(null);
+            return;
         }
+
+        // Fetch user profiles for the contact IDs
+        const usersCollection = collection(db, "users");
+        const q = query(usersCollection, where("id", "in", contactIds));
+        
+        const unsubscribeUsers = onSnapshot(q, (querySnapshot) => {
+          const users: ChatUser[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            users.push({
+              id: data.id,
+              name: data.name,
+              avatar: data.avatar,
+              online: data.online,
+              email: data.email
+            });
+          });
+          setContacts(users);
+          
+          if (!selectedContact || !contactIds.includes(selectedContact.id)) {
+              const prevSelectedId = sessionStorage.getItem('selectedContactId');
+              const contactToSelect = users.find(u => u.id === prevSelectedId) || users[0];
+              setSelectedContact(contactToSelect);
+          }
+        });
+        return () => unsubscribeUsers();
       });
-      return () => unsubscribe();
+
+      return () => unsubscribeContacts();
     }
-  }, [user]);
+  }, [user, selectedContact]);
 
    useEffect(() => {
     if (selectedContact) {
@@ -239,6 +259,48 @@ export default function ChatPage() {
     }
   };
 
+  const handleAddContact = async (contactEmail: string) => {
+      if (!user) return;
+      if (contactEmail === user.email) {
+          toast({ variant: "destructive", title: "Error", description: "You cannot add yourself as a contact." });
+          return;
+      }
+
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", contactEmail));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+          toast({ variant: "destructive", title: "Not Found", description: "No user found with that email." });
+          return;
+      }
+
+      const contactUser = querySnapshot.docs[0].data() as ChatUser;
+      const contactId = contactUser.id;
+
+      // Add to current user's contacts
+      const contactDocRef = doc(db, "users", user.uid, "contacts", contactId);
+      const contactDoc = await getDoc(contactDocRef);
+
+      if (contactDoc.exists()) {
+          toast({ title: "Already a contact", description: `${contactUser.name} is already in your contacts.` });
+          return;
+      }
+      
+      const batch = writeBatch(db);
+      batch.set(contactDocRef, { addedAt: serverTimestamp() });
+      
+      // Also add current user to the new contact's list to make it reciprocal
+      const currentUserContactDocRef = doc(db, "users", contactId, "contacts", user.uid);
+      batch.set(currentUserContactDocRef, { addedAt: serverTimestamp() });
+
+      await batch.commit();
+
+      toast({ title: "Contact Added", description: `You and ${contactUser.name} are now contacts.` });
+      setIsAddContactOpen(false);
+  };
+
+
   if (loading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -258,6 +320,13 @@ export default function ChatPage() {
                     </div>
                 </SidebarHeader>
                 <SidebarContent>
+                    <SidebarGroup>
+                       <SidebarGroupLabel>Contacts</SidebarGroupLabel>
+                       <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setIsAddContactOpen(true)}>
+                            <UserPlus className="mr-2 h-4 w-4" />
+                            Add Contact
+                        </Button>
+                    </SidebarGroup>
                     <SidebarMenu>
                         {contacts.map((contact) => (
                         <SidebarMenuItem key={contact.id}>
@@ -357,14 +426,25 @@ export default function ChatPage() {
                     </footer>
                 </div>
                  ) : (
-                    <div className="flex flex-col h-full items-center justify-center">
+                    <div className="flex flex-col h-full items-center justify-center text-center p-4">
                         <MessageCircle className="w-24 h-24 text-muted-foreground" />
-                        <h2 className="text-2xl font-semibold mt-4">Select a chat</h2>
-                        <p className="text-muted-foreground mt-2">Choose a person from the sidebar to start a conversation.</p>
+                        <h2 className="text-2xl font-semibold mt-4">Select a contact to start chatting</h2>
+                        <p className="text-muted-foreground mt-2">
+                          {contacts.length > 0
+                            ? "Choose someone from the sidebar."
+                            : "You don't have any contacts yet. Click 'Add Contact' to find people."}
+                        </p>
                     </div>
                 )}
             </SidebarInset>
         </div>
+        <AddContactDialog
+            isOpen={isAddContactOpen}
+            onOpenChange={setIsAddContactOpen}
+            onAddContact={handleAddContact}
+        />
     </SidebarProvider>
   );
 }
+
+    
