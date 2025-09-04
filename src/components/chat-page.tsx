@@ -104,17 +104,17 @@ export default function ChatPage() {
       const contactsCollection = collection(db, "users", user.uid, "contacts");
       const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
         const contactIds = snapshot.docs.map(doc => doc.id);
-        
+
         if (contactIds.length === 0) {
             setContacts([]);
             setSelectedContact(null);
-            setStories([]);
-            return;
         }
+
+        const allUserIdsToFetch = Array.from(new Set([user.uid, ...contactIds]));
 
         // Fetch user profiles for the contact IDs
         const usersCollection = collection(db, "users");
-        const qUsers = query(usersCollection, where("id", "in", contactIds));
+        const qUsers = query(usersCollection, where("id", "in", allUserIdsToFetch));
         
         const unsubscribeUsers = onSnapshot(qUsers, (querySnapshot) => {
           const users: ChatUser[] = [];
@@ -128,51 +128,57 @@ export default function ChatPage() {
               email: data.email
             });
           });
-          setContacts(users);
+
+          // Separate contacts from the full list of users fetched
+          const contactUsers = users.filter(u => u.id !== user.uid);
+          setContacts(contactUsers);
           
           if (!selectedContact || !contactIds.includes(selectedContact.id)) {
               const prevSelectedId = sessionStorage.getItem('selectedContactId');
-              const contactToSelect = users.find(u => u.id === prevSelectedId) || users[0];
+              const contactToSelect = contactUsers.find(u => u.id === prevSelectedId) || contactUsers[0] || null;
               setSelectedContact(contactToSelect);
           }
+           
+          // Fetch active stories for contacts and the current user
+            const now = Timestamp.now();
+            const storiesCollection = collection(db, "stories");
+            if (allUserIdsToFetch.length > 0) {
+                const qStories = query(storiesCollection, 
+                    where("userId", "in", allUserIdsToFetch), 
+                    where("expiresAt", ">", now),
+                    orderBy("expiresAt", "desc")
+                );
+
+                const unsubscribeStories = onSnapshot(qStories, async (storySnapshot) => {
+                    const fetchedStories: Story[] = [];
+                    for (const storyDoc of storySnapshot.docs) {
+                        const storyData = storyDoc.data();
+                        const storyUser = users.find(u => u.id === storyData.userId);
+                        if (storyUser) {
+                            fetchedStories.push({
+                                id: storyDoc.id,
+                                ...storyData,
+                                userAvatar: storyUser.avatar,
+                                userName: storyUser.id === user.uid ? "You" : storyUser.name,
+                            } as Story);
+                        }
+                    }
+                    setStories(fetchedStories);
+                });
+                return () => unsubscribeStories();
+            } else {
+                setStories([]);
+            }
         });
         
-         // Fetch active stories for contacts
-        const now = Timestamp.now();
-        const storiesCollection = collection(db, "stories");
-        const qStories = query(storiesCollection, 
-            where("userId", "in", contactIds), 
-            where("expiresAt", ">", now),
-            orderBy("expiresAt", "desc")
-        );
-
-        const unsubscribeStories = onSnapshot(qStories, async (storySnapshot) => {
-            const fetchedStories: Story[] = [];
-            for (const storyDoc of storySnapshot.docs) {
-                const storyData = storyDoc.data();
-                const contact = contacts.find(c => c.id === storyData.userId);
-                if (contact) {
-                    fetchedStories.push({
-                        id: storyDoc.id,
-                        ...storyData,
-                        userAvatar: contact.avatar,
-                        userName: contact.name,
-                    } as Story);
-                }
-            }
-            setStories(fetchedStories);
-        });
-
-
         return () => {
             unsubscribeUsers();
-            unsubscribeStories();
         };
       });
 
       return () => unsubscribeContacts();
     }
-  }, [user, selectedContact]); // Re-run when contacts change
+  }, [user]);
 
    useEffect(() => {
     if (selectedContact) {
@@ -399,7 +405,15 @@ export default function ChatPage() {
       }
   };
 
-  const contactsWithStories = contacts.filter(contact => stories.some(story => story.userId === contact.id));
+  const storyUsers = stories.reduce((acc, story) => {
+    if (!acc.find(user => user.id === story.userId)) {
+      const chatUser = contacts.find(c => c.id === story.userId) || (story.userId === user?.uid ? { id: user.uid, name: "You", avatar: user.photoURL || '' } : null);
+      if(chatUser) {
+        acc.push({ ...chatUser, name: story.userName, avatar: story.userAvatar});
+      }
+    }
+    return acc;
+  }, [] as Partial<ChatUser>[]);
 
   if (loading || !user) {
     return (
@@ -438,17 +452,17 @@ export default function ChatPage() {
                         </Link>
                     </SidebarGroup>
                     <SidebarSeparator />
-                     {contactsWithStories.length > 0 && (
+                     {storyUsers.length > 0 && (
                         <SidebarGroup>
                             <SidebarGroupLabel>Stories</SidebarGroupLabel>
                             <div className="flex gap-4 px-2 overflow-x-auto pb-2">
-                                {contactsWithStories.map(contact => (
-                                    <div key={contact.id} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => setViewingStoryForUser(contact)}>
+                                {storyUsers.map(storyUser => (
+                                    <div key={storyUser.id} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => setViewingStoryForUser(storyUser as ChatUser)}>
                                         <Avatar className="h-12 w-12 border-2 border-primary">
-                                            <AvatarImage src={contact.avatar} />
-                                            <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
+                                            <AvatarImage src={storyUser.avatar} />
+                                            <AvatarFallback>{storyUser.name?.charAt(0)}</AvatarFallback>
                                         </Avatar>
-                                        <span className="text-xs w-14 truncate text-center">{contact.name}</span>
+                                        <span className="text-xs w-14 truncate text-center">{storyUser.name}</span>
                                     </div>
                                 ))}
                             </div>
@@ -590,3 +604,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
