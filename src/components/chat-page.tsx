@@ -98,87 +98,112 @@ export default function ChatPage() {
     return () => unsubscribe();
   }, [router]);
 
+    useEffect(() => {
+        if (!user) return;
+
+        const contactsCollection = collection(db, "users", user.uid, "contacts");
+        const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
+            const contactIds = snapshot.docs.map(doc => doc.id);
+
+            if (contactIds.length > 0) {
+                const usersCollection = collection(db, "users");
+                const qUsers = query(usersCollection, where("id", "in", contactIds));
+                
+                onSnapshot(qUsers, (querySnapshot) => {
+                    const fetchedContacts: ChatUser[] = [];
+                    querySnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        fetchedContacts.push({
+                          id: data.id,
+                          name: data.name,
+                          avatar: data.avatar,
+                          online: data.online,
+                          email: data.email
+                        });
+                    });
+                    setContacts(fetchedContacts);
+
+                    if (!selectedContact || !contactIds.includes(selectedContact.id)) {
+                        const prevSelectedId = sessionStorage.getItem('selectedContactId');
+                        const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
+                        setSelectedContact(contactToSelect);
+                    }
+                });
+            } else {
+                setContacts([]);
+                setSelectedContact(null);
+            }
+        });
+        
+        return () => unsubscribeContacts();
+    }, [user, selectedContact]);
+
+
   useEffect(() => {
     if (user) {
-      // Listen to the user's contacts subcollection
-      const contactsCollection = collection(db, "users", user.uid, "contacts");
-      const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
-        const contactIds = snapshot.docs.map(doc => doc.id);
+        const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
+        if (allUserIds.length === 0) {
+            setStories([]);
+            return;
+        };
 
-        if (contactIds.length === 0) {
-            setContacts([]);
-            setSelectedContact(null);
-        }
-
-        const allUserIdsToFetch = Array.from(new Set([user.uid, ...contactIds]));
-
-        // Fetch user profiles for the contact IDs
-        const usersCollection = collection(db, "users");
-        const qUsers = query(usersCollection, where("id", "in", allUserIdsToFetch));
+        const now = Timestamp.now();
+        const storiesCollection = collection(db, "stories");
         
-        const unsubscribeUsers = onSnapshot(qUsers, (querySnapshot) => {
-          const users: ChatUser[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            users.push({
-              id: data.id,
-              name: data.name,
-              avatar: data.avatar,
-              online: data.online,
-              email: data.email
-            });
-          });
+        const unsubscribes: (() => void)[] = [];
 
-          // Separate contacts from the full list of users fetched
-          const contactUsers = users.filter(u => u.id !== user.uid);
-          setContacts(contactUsers);
-          
-          if (!selectedContact || !contactIds.includes(selectedContact.id)) {
-              const prevSelectedId = sessionStorage.getItem('selectedContactId');
-              const contactToSelect = contactUsers.find(u => u.id === prevSelectedId) || contactUsers[0] || null;
-              setSelectedContact(contactToSelect);
-          }
-           
-          // Fetch active stories for contacts and the current user
-            const now = Timestamp.now();
-            const storiesCollection = collection(db, "stories");
-            if (allUserIdsToFetch.length > 0) {
-                const qStories = query(storiesCollection, 
-                    where("userId", "in", allUserIdsToFetch), 
+        const fetchStories = async () => {
+            const allStories: Story[] = [];
+            
+            for (const userId of allUserIds) {
+                const qStories = query(storiesCollection,
+                    where("userId", "==", userId),
                     where("expiresAt", ">", now),
                     orderBy("expiresAt", "desc")
                 );
 
-                const unsubscribeStories = onSnapshot(qStories, async (storySnapshot) => {
-                    const fetchedStories: Story[] = [];
+                const unsubscribe = onSnapshot(qStories, async (storySnapshot) => {
+                    const userStories: Story[] = [];
                     for (const storyDoc of storySnapshot.docs) {
                         const storyData = storyDoc.data();
-                        const storyUser = users.find(u => u.id === storyData.userId);
+                        
+                        let storyUser: ChatUser | { id: string, name: string, avatar: string } | undefined;
+                        if (userId === user.uid) {
+                            storyUser = { id: user.uid, name: "You", avatar: user.photoURL || ''};
+                        } else {
+                            storyUser = contacts.find(c => c.id === userId);
+                        }
+
                         if (storyUser) {
-                            fetchedStories.push({
+                            userStories.push({
                                 id: storyDoc.id,
                                 ...storyData,
                                 userAvatar: storyUser.avatar,
-                                userName: storyUser.id === user.uid ? "You" : storyUser.name,
+                                userName: storyUser.name,
                             } as Story);
                         }
                     }
-                    setStories(fetchedStories);
-                });
-                return () => unsubscribeStories();
-            } else {
-                setStories([]);
-            }
-        });
-        
-        return () => {
-            unsubscribeUsers();
-        };
-      });
 
-      return () => unsubscribeContacts();
+                    // Replace old stories for this user with new ones
+                    const otherStories = allStories.filter(s => s.userId !== userId);
+                    allStories.splice(0, allStories.length, ...otherStories, ...userStories);
+                    
+                    // Sort all stories to maintain order
+                    allStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                    setStories([...allStories]);
+                });
+                unsubscribes.push(unsubscribe);
+            }
+        };
+
+        fetchStories();
+
+        return () => {
+            unsubscribes.forEach(unsub => unsub());
+        };
     }
-  }, [user]);
+}, [user, contacts]);
+
 
    useEffect(() => {
     if (selectedContact) {
@@ -604,5 +629,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
