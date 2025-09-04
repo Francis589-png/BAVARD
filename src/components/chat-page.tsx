@@ -152,14 +152,13 @@ export default function ChatPage() {
         const unsubscribes: (() => void)[] = [];
 
         const fetchStories = async () => {
-            const allStories: Story[] = [];
-            const storiesCollection = collection(db, "stories");
+            // No need to clear stories here, we will update atomically
             
             for (const userId of allUserIds) {
+                const storiesCollection = collection(db, "stories");
                 const qStories = query(storiesCollection,
                     where("userId", "==", userId),
-                    where("expiresAt", ">", now),
-                    orderBy("expiresAt", "desc")
+                    where("expiresAt", ">", now)
                 );
 
                 const unsubscribe = onSnapshot(qStories, async (storySnapshot) => {
@@ -167,27 +166,32 @@ export default function ChatPage() {
                     for (const storyDoc of storySnapshot.docs) {
                         const storyData = storyDoc.data();
                         
-                        let storyUser: ChatUser | { id: string, name: string, avatar: string } | undefined;
+                        let storyUser: { id: string, name: string, avatar: string };
                         if (userId === user.uid) {
                             storyUser = { id: user.uid, name: "You", avatar: user.photoURL || ''};
                         } else {
-                            storyUser = contacts.find(c => c.id === userId);
+                            const contact = contacts.find(c => c.id === userId);
+                            if (contact) {
+                                storyUser = contact;
+                            } else {
+                                // This might happen if contact list is not updated yet, skip for now.
+                                continue; 
+                            }
                         }
-
-                        if (storyUser) {
-                            userStories.push({
-                                id: storyDoc.id,
-                                ...storyData,
-                                userAvatar: storyUser.avatar,
-                                userName: storyUser.name,
-                            } as Story);
-                        }
+                        
+                        userStories.push({
+                            id: storyDoc.id,
+                            ...storyData,
+                            userAvatar: storyUser.avatar,
+                            userName: storyUser.name,
+                        } as Story);
                     }
 
-                    // Atomic update of stories
+                    // Atomically update stories for this user
                     setStories(prevStories => {
                         const otherStories = prevStories.filter(s => s.userId !== userId);
                         const updatedStories = [...otherStories, ...userStories];
+                        // Optional: sort stories again after update
                         updatedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                         return updatedStories;
                     });
@@ -431,7 +435,7 @@ export default function ChatPage() {
   };
 
   const storyUsers = stories.reduce((acc, story) => {
-    if (!acc.find(user => user.id === story.userId)) {
+    if (!acc.find(u => u.id === story.userId)) {
       let chatUser: Partial<ChatUser> | null = null;
       if(story.userId === user?.uid) {
         chatUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
@@ -439,7 +443,7 @@ export default function ChatPage() {
         chatUser = contacts.find(c => c.id === story.userId) || null;
       }
       if(chatUser) {
-        acc.push({ ...chatUser, name: story.userName, avatar: story.userAvatar});
+        acc.push({ ...chatUser, name: story.userName, avatar: story.userAvatar, id: story.userId});
       }
     }
     return acc;
@@ -634,3 +638,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
