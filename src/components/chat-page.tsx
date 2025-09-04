@@ -491,9 +491,9 @@ export default function ChatPage() {
                             >
                             <Avatar className="h-8 w-8">
                                 <AvatarImage src={contact.avatar} alt={contact.name} />
-                                <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
+                                <AvatarFallback>{contact.name?.charAt(0) || contact.email?.charAt(0)}</AvatarFallback>
                             </Avatar>
-                            <span>{contact.name}</span>
+                            <span>{contact.name || contact.email}</span>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                         ))}
@@ -522,10 +522,10 @@ export default function ChatPage() {
                          <SidebarTrigger className="md:hidden" />
                          <Avatar className="h-10 w-10">
                             <AvatarImage src={selectedContact.avatar} alt={selectedContact.name} />
-                            <AvatarFallback>{selectedContact.name.charAt(0)}</AvatarFallback>
+                            <AvatarFallback>{selectedContact.name?.charAt(0) || selectedContact.email?.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="ml-4">
-                            <h2 className="text-lg font-semibold">{selectedContact.name}</h2>
+                            <h2 className="text-lg font-semibold">{selectedContact.name || selectedContact.email}</h2>
                         </div>
                     </header>
 
@@ -614,6 +614,8 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
 
     
 
