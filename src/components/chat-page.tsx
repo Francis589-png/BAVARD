@@ -148,12 +148,12 @@ export default function ChatPage() {
         };
 
         const now = Timestamp.now();
-        const storiesCollection = collection(db, "stories");
         
         const unsubscribes: (() => void)[] = [];
 
         const fetchStories = async () => {
             const allStories: Story[] = [];
+            const storiesCollection = collection(db, "stories");
             
             for (const userId of allUserIds) {
                 const qStories = query(storiesCollection,
@@ -184,13 +184,13 @@ export default function ChatPage() {
                         }
                     }
 
-                    // Replace old stories for this user with new ones
-                    const otherStories = allStories.filter(s => s.userId !== userId);
-                    allStories.splice(0, allStories.length, ...otherStories, ...userStories);
-                    
-                    // Sort all stories to maintain order
-                    allStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                    setStories([...allStories]);
+                    // Atomic update of stories
+                    setStories(prevStories => {
+                        const otherStories = prevStories.filter(s => s.userId !== userId);
+                        const updatedStories = [...otherStories, ...userStories];
+                        updatedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                        return updatedStories;
+                    });
                 });
                 unsubscribes.push(unsubscribe);
             }
@@ -432,7 +432,12 @@ export default function ChatPage() {
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(user => user.id === story.userId)) {
-      const chatUser = contacts.find(c => c.id === story.userId) || (story.userId === user?.uid ? { id: user.uid, name: "You", avatar: user.photoURL || '' } : null);
+      let chatUser: Partial<ChatUser> | null = null;
+      if(story.userId === user?.uid) {
+        chatUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+      } else {
+        chatUser = contacts.find(c => c.id === story.userId) || null;
+      }
       if(chatUser) {
         acc.push({ ...chatUser, name: story.userName, avatar: story.userAvatar});
       }
@@ -515,7 +520,7 @@ export default function ChatPage() {
                     </SidebarMenu>
                 </SidebarContent>
                 <SidebarFooter>
-                    <div className="flex items-center gap-3">
+                    <Link href="/profile" className="flex items-center gap-3 hover:bg-muted p-2 rounded-md transition-colors">
                          <Avatar className="h-8 w-8">
                             <AvatarImage src={user.photoURL ?? undefined} />
                             <AvatarFallback>
@@ -526,7 +531,7 @@ export default function ChatPage() {
                         <Button onClick={handleSignOut} variant="ghost" size="icon" className="ml-auto">
                             <LogOut className="w-5 h-5"/>
                         </Button>
-                    </div>
+                    </Link>
                 </SidebarFooter>
             </Sidebar>
 
