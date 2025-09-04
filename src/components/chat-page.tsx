@@ -28,6 +28,7 @@ import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy,
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
+import { textToSpeech } from "@/ai/flows/tts-flow";
 
 interface ChatUser {
   id: string;
@@ -57,6 +58,10 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const router = useRouter();
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -201,63 +206,74 @@ export default function ChatPage() {
         return;
     }
     const file = e.target.files[0];
-    setUploading(true);
+    await handleFileUpload(file);
 
-    try {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = async () => {
-            const dataUri = reader.result as string;
-            try {
-                const ipfsHash = await uploadFile({ dataUri, fileName: file.name });
-                const isImage = file.type.startsWith('image/');
-                const messageType = isImage ? 'image' : 'file';
-
-                const chatId = [user.uid, selectedContact.id].sort().join("_");
-                const messagesCollection = collection(db, "chats", chatId, "messages");
-
-                await addDoc(messagesCollection, {
-                    senderId: user.uid,
-                    timestamp: serverTimestamp(),
-                    type: messageType,
-                    url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-                    fileName: file.name
-                });
-
-            } catch (error) {
-                console.error("File upload error:", error);
-                toast({
-                    variant: "destructive",
-                    title: "Upload Error",
-                    description: "Failed to upload file to Pinata.",
-                });
-            } finally {
-                setUploading(false);
-            }
-        };
-        reader.onerror = (error) => {
-            console.error("File reader error:", error);
-            toast({
-                variant: "destructive",
-                title: "Error",
-                description: "Failed to read file.",
-            });
-            setUploading(false);
-        };
-    } catch (error) {
-        console.error("File processing error:", error);
-        toast({
-            variant: "destructive",
-            title: "Error",
-            description: "An error occurred while processing the file.",
-        });
-        setUploading(false);
-    }
     // Reset file input
     if(fileInputRef.current) {
         fileInputRef.current.value = "";
     }
   };
+  
+  const handleFileUpload = async (file: Blob, fileName?: string) => {
+    if (!user || !selectedContact) return;
+    
+    setUploading(true);
+    const resolvedFileName = fileName || (file instanceof File ? file.name : `audio-message-${Date.now()}.webm`);
+    
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        const dataUri = reader.result as string;
+        try {
+          const ipfsHash = await uploadFile({ dataUri, fileName: resolvedFileName });
+          const isImage = file.type.startsWith('image/');
+          const isAudio = file.type.startsWith('audio/');
+          let messageType: Message['type'] = 'file';
+          if (isImage) messageType = 'image';
+          if (isAudio) messageType = 'audio';
+
+          const chatId = [user.uid, selectedContact.id].sort().join('_');
+          const messagesCollection = collection(db, 'chats', chatId, 'messages');
+
+          await addDoc(messagesCollection, {
+            senderId: user.uid,
+            timestamp: serverTimestamp(),
+            type: messageType,
+            url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+            fileName: resolvedFileName,
+          });
+        } catch (error) {
+          console.error('File upload error:', error);
+          toast({
+            variant: 'destructive',
+            title: 'Upload Error',
+            description: 'Failed to upload file to Pinata.',
+          });
+        } finally {
+          setUploading(false);
+        }
+      };
+      reader.onerror = (error) => {
+        console.error('File reader error:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to read file.',
+        });
+        setUploading(false);
+      };
+    } catch (error) {
+      console.error('File processing error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'An error occurred while processing the file.',
+      });
+      setUploading(false);
+    }
+  };
+
 
   const handleAddContact = async (contactEmail: string) => {
       if (!user) return;
@@ -298,6 +314,40 @@ export default function ChatPage() {
 
       toast({ title: "Contact Added", description: `You and ${contactUser.name} are now contacts.` });
       setIsAddContactOpen(false);
+  };
+  
+  const startRecording = async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+
+        mediaRecorderRef.current.ondataavailable = (event) => {
+            audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorderRef.current.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+            // Clean up stream tracks
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+        toast({ title: "Recording started..." });
+    } catch (error) {
+        console.error("Error accessing microphone:", error);
+        toast({ variant: "destructive", title: "Microphone Error", description: "Could not access microphone. Please check permissions." });
+    }
+  };
+
+  const stopRecording = () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+          toast({ title: "Recording stopped, uploading..." });
+      }
   };
 
 
@@ -408,7 +458,15 @@ export default function ChatPage() {
                                 <span className="sr-only">Attach file</span>
                             </Button>
                              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                             <Button type="button" size="icon" variant="ghost">
+                             <Button 
+                                type="button" 
+                                size="icon" 
+                                variant={isRecording ? "destructive" : "ghost"}
+                                onMouseDown={startRecording}
+                                onMouseUp={stopRecording}
+                                onTouchStart={startRecording}
+                                onTouchEnd={stopRecording}
+                            >
                                 <Mic className="w-5 h-5" />
                                 <span className="sr-only">Record voice message</span>
                             </Button>
@@ -417,9 +475,9 @@ export default function ChatPage() {
                                 className="flex-1"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
-                                disabled={uploading}
+                                disabled={uploading || isRecording}
                              />
-                            <Button type="submit" size="icon" disabled={uploading}>
+                            <Button type="submit" size="icon" disabled={uploading || isRecording}>
                                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             </Button>
                         </form>
@@ -446,5 +504,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
