@@ -140,73 +140,62 @@ export default function ChatPage() {
 
 
   useEffect(() => {
-    if (user) {
-        const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
-        if (allUserIds.length === 0) {
-            setStories([]);
-            return;
-        };
+    if (!user) return;
 
-        const now = Timestamp.now();
-        
-        const unsubscribes: (() => void)[] = [];
+    const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
+    if (allUserIds.length === 0) {
+        setStories([]);
+        return;
+    };
 
-        const fetchStories = async () => {
-            // No need to clear stories here, we will update atomically
+    const storiesCollection = collection(db, "stories");
+    const now = Timestamp.now();
+
+    const qStories = query(storiesCollection, 
+        where("userId", "in", allUserIds),
+        where("expiresAt", ">", now)
+    );
+
+    const unsubscribe = onSnapshot(qStories, async (snapshot) => {
+        const fetchedStories: Story[] = [];
+        for (const storyDoc of snapshot.docs) {
+            const storyData = storyDoc.data();
+            const storyUserId = storyData.userId;
             
-            for (const userId of allUserIds) {
-                const storiesCollection = collection(db, "stories");
-                const qStories = query(storiesCollection,
-                    where("userId", "==", userId),
-                    where("expiresAt", ">", now)
-                );
-
-                const unsubscribe = onSnapshot(qStories, async (storySnapshot) => {
-                    const userStories: Story[] = [];
-                    for (const storyDoc of storySnapshot.docs) {
-                        const storyData = storyDoc.data();
-                        
-                        let storyUser: { id: string, name: string, avatar: string };
-                        if (userId === user.uid) {
-                            storyUser = { id: user.uid, name: "You", avatar: user.photoURL || ''};
-                        } else {
-                            const contact = contacts.find(c => c.id === userId);
-                            if (contact) {
-                                storyUser = contact;
-                            } else {
-                                // This might happen if contact list is not updated yet, skip for now.
-                                continue; 
-                            }
-                        }
-                        
-                        userStories.push({
-                            id: storyDoc.id,
-                            ...storyData,
-                            userAvatar: storyUser.avatar,
-                            userName: storyUser.name,
-                        } as Story);
+            let storyUser: { id: string, name: string, avatar: string };
+            
+            if (storyUserId === user.uid) {
+                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || ''};
+            } else {
+                const contact = contacts.find(c => c.id === storyUserId);
+                if (contact) {
+                    storyUser = contact;
+                } else {
+                    // It's possible the contact isn't loaded yet, try to fetch user doc
+                    const userDocSnap = await getDoc(doc(db, "users", storyUserId));
+                    if (userDocSnap.exists()) {
+                        const userData = userDocSnap.data();
+                        storyUser = { id: userData.id, name: userData.name, avatar: userData.avatar };
+                    } else {
+                       continue; // Skip if user not found
                     }
-
-                    // Atomically update stories for this user
-                    setStories(prevStories => {
-                        const otherStories = prevStories.filter(s => s.userId !== userId);
-                        const updatedStories = [...otherStories, ...userStories];
-                        // Optional: sort stories again after update
-                        updatedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                        return updatedStories;
-                    });
-                });
-                unsubscribes.push(unsubscribe);
+                }
             }
-        };
 
-        fetchStories();
+            fetchedStories.push({
+                id: storyDoc.id,
+                ...storyData,
+                userAvatar: storyUser.avatar,
+                userName: storyUser.name,
+            } as Story);
+        }
+        
+        fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setStories(fetchedStories);
+    });
 
-        return () => {
-            unsubscribes.forEach(unsub => unsub());
-        };
-    }
-}, [user, contacts]);
+    return () => unsubscribe();
+  }, [user, contacts]);
 
 
    useEffect(() => {
