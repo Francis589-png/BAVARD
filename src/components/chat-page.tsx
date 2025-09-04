@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,8 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc } from "firebase/firestore";
+import Image from "next/image";
+import { uploadFile } from "@/ai/flows/pinata-flow";
 
 interface ChatUser {
   id: string;
@@ -35,8 +37,11 @@ interface ChatUser {
 interface Message {
     id: string;
     senderId: string;
-    text: string;
     timestamp: any;
+    type: 'text' | 'image' | 'audio' | 'file';
+    text?: string;
+    url?: string;
+    fileName?: string;
 }
 
 
@@ -47,9 +52,11 @@ export default function ChatPage() {
   const [selectedContact, setSelectedContact] = useState<ChatUser | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
 
   useEffect(() => {
@@ -83,12 +90,21 @@ export default function ChatPage() {
         });
         setContacts(users);
         if (!selectedContact && users.length > 0) {
-            setSelectedContact(users[0]);
+            // Find the contact if it was previously selected
+            const prevSelected = sessionStorage.getItem('selectedContactId');
+            const contactToSelect = users.find(u => u.id === prevSelected) || users[0];
+            setSelectedContact(contactToSelect);
         }
       });
       return () => unsubscribe();
     }
-  }, [user, selectedContact]);
+  }, [user]);
+
+   useEffect(() => {
+    if (selectedContact) {
+      sessionStorage.setItem('selectedContactId', selectedContact.id);
+    }
+   }, [selectedContact]);
 
   useEffect(() => {
     if (user && selectedContact) {
@@ -102,10 +118,9 @@ export default function ChatPage() {
             const data = doc.data();
             msgs.push({
                 id: doc.id,
-                text: data.text,
-                senderId: data.senderId,
+                ...data,
                 timestamp: data.timestamp?.toDate() ?? new Date()
-            });
+            } as Message);
         });
         setMessages(msgs);
       });
@@ -148,6 +163,7 @@ export default function ChatPage() {
             text: newMessage,
             senderId: user.uid,
             timestamp: serverTimestamp(),
+            type: 'text',
         });
         setNewMessage("");
     } catch (error) {
@@ -159,6 +175,69 @@ export default function ChatPage() {
         console.error("Send Message Error:", error);
     }
   }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !user || !selectedContact) {
+        return;
+    }
+    const file = e.target.files[0];
+    setUploading(true);
+
+    try {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = async () => {
+            const dataUri = reader.result as string;
+            try {
+                const ipfsHash = await uploadFile({ dataUri, fileName: file.name });
+                const isImage = file.type.startsWith('image/');
+                const messageType = isImage ? 'image' : 'file';
+
+                const chatId = [user.uid, selectedContact.id].sort().join("_");
+                const messagesCollection = collection(db, "chats", chatId, "messages");
+
+                await addDoc(messagesCollection, {
+                    senderId: user.uid,
+                    timestamp: serverTimestamp(),
+                    type: messageType,
+                    url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+                    fileName: file.name
+                });
+
+            } catch (error) {
+                console.error("File upload error:", error);
+                toast({
+                    variant: "destructive",
+                    title: "Upload Error",
+                    description: "Failed to upload file to Pinata.",
+                });
+            } finally {
+                setUploading(false);
+            }
+        };
+        reader.onerror = (error) => {
+            console.error("File reader error:", error);
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to read file.",
+            });
+            setUploading(false);
+        };
+    } catch (error) {
+        console.error("File processing error:", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "An error occurred while processing the file.",
+        });
+        setUploading(false);
+    }
+    // Reset file input
+    if(fileInputRef.current) {
+        fileInputRef.current.value = "";
+    }
+  };
 
   if (loading || !user) {
     return (
@@ -192,7 +271,6 @@ export default function ChatPage() {
                                 <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <span>{contact.name}</span>
-                             {/* {contact.online && <div className="w-2 h-2 rounded-full bg-green-500 ml-auto" />} */}
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                         ))}
@@ -225,7 +303,6 @@ export default function ChatPage() {
                         </Avatar>
                         <div className="ml-4">
                             <h2 className="text-lg font-semibold">{selectedContact.name}</h2>
-                            {/* <p className="text-sm text-muted-foreground">{selectedContact.online ? 'Online' : 'Offline'}</p> */}
                         </div>
                     </header>
 
@@ -233,7 +310,19 @@ export default function ChatPage() {
                        {messages.map((message) => (
                            <div key={message.id} className={`flex ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                <div className={`rounded-lg px-4 py-2 max-w-sm ${message.senderId === user.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                   <p>{message.text}</p>
+                                   {message.type === 'text' && <p>{message.text}</p>}
+                                   {message.type === 'image' && message.url && (
+                                       <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
+                                   )}
+                                   {message.type === 'file' && message.url && (
+                                       <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
+                                          <Download className="w-4 h-4"/>
+                                          <span>{message.fileName || 'Download File'}</span>
+                                       </a>
+                                   )}
+                                    {message.type === 'audio' && message.url && (
+                                        <audio controls src={message.url} className="w-full" />
+                                   )}
                                    <p className="text-xs text-right opacity-70 mt-1">
                                     {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                    </p>
@@ -244,15 +333,25 @@ export default function ChatPage() {
                     </main>
 
                      <footer className="p-4 border-t">
-                        <form onSubmit={handleSendMessage} className="relative">
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()}>
+                                <Paperclip className="w-5 h-5" />
+                                <span className="sr-only">Attach file</span>
+                            </Button>
+                             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                             <Button type="button" size="icon" variant="ghost">
+                                <Mic className="w-5 h-5" />
+                                <span className="sr-only">Record voice message</span>
+                            </Button>
                             <Input 
                                 placeholder="Type a message..." 
-                                className="pr-12"
+                                className="flex-1"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
+                                disabled={uploading}
                              />
-                            <Button type="submit" size="icon" className="absolute top-1/2 right-2 -translate-y-1/2">
-                                <Send className="w-5 h-5" />
+                            <Button type="submit" size="icon" disabled={uploading}>
+                                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             </Button>
                         </form>
                     </footer>
