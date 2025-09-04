@@ -9,8 +9,6 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { Readable } from 'stream';
-
 
 const UploadFileInputSchema = z.object({
   dataUri: z.string().describe("The file encoded as a data URI."),
@@ -35,13 +33,11 @@ const uploadFileFlow = ai.defineFlow(
         throw new Error("Pinata JWT not found in environment variables.");
     }
 
-    const data = Buffer.from(input.dataUri.split(',')[1], 'base64');
+    const fetchResponse = await fetch(input.dataUri);
+    const blob = await fetchResponse.blob();
     
     const formData = new FormData();
-    const fileStream = Readable.from(data);
-    
-    // @ts-ignore - FormData type in Node.js expects a different type but this works with fetch
-    formData.append('file', fileStream, input.fileName);
+    formData.append('file', blob, input.fileName);
 
     const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
         method: "POST",
