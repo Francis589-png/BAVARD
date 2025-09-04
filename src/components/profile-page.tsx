@@ -47,6 +47,15 @@ export default function ProfilePage() {
             reader.readAsDataURL(file);
         }
     };
+    
+    const fileToDataUri = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
 
     const handleUpdateProfilePicture = async () => {
         if (!imageFile || !user) {
@@ -61,55 +70,36 @@ export default function ProfilePage() {
         setUploading(true);
 
         try {
-            const reader = new FileReader();
-            reader.readAsDataURL(imageFile);
-            reader.onload = async () => {
-                const dataUri = reader.result as string;
-                try {
-                    const ipfsHash = await uploadFile({ dataUri, fileName: imageFile.name });
-                    const newAvatarUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+            const dataUri = await fileToDataUri(imageFile);
+            const ipfsHash = await uploadFile({ dataUri, fileName: imageFile.name });
+            const newAvatarUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
 
-                    // Update Firebase Auth profile
-                    await updateProfile(user, { photoURL: newAvatarUrl });
+            // Update Firebase Auth profile
+            await updateProfile(user, { photoURL: newAvatarUrl });
 
-                    // Update Firestore user document
-                    const userDocRef = doc(db, 'users', user.uid);
-                    await updateDoc(userDocRef, { avatar: newAvatarUrl });
+            // Update Firestore user document
+            const userDocRef = doc(db, 'users', user.uid);
+            await updateDoc(userDocRef, { avatar: newAvatarUrl });
 
-                    toast({
-                        title: "Profile Updated!",
-                        description: "Your new profile picture is now set.",
-                    });
-                    
-                    // Force a reload of the user object to reflect changes
-                    await user.reload();
-                    setUser({ ...user }); // Trigger re-render
-                    setImageFile(null);
-                    setImagePreview(null);
+            toast({
+                title: "Profile Updated!",
+                description: "Your new profile picture is now set.",
+            });
+            
+            // Force a reload of the user object to reflect changes
+            await user.reload();
+            setUser(auth.currentUser); 
+            setImageFile(null);
+            setImagePreview(null);
 
-
-                } catch (error) {
-                    console.error('Profile update error:', error);
-                    toast({
-                        variant: 'destructive',
-                        title: 'Update Error',
-                        description: 'Failed to update your profile picture.',
-                    });
-                } finally {
-                    setUploading(false);
-                }
-            };
-             reader.onerror = (error) => {
-                setUploading(false);
-                toast({ variant: 'destructive', title: 'File Error', description: 'Failed to read the selected file.' });
-            }
         } catch (error) {
-            console.error('File processing error:', error);
+            console.error('Profile update error:', error);
             toast({
                 variant: 'destructive',
-                title: 'Error',
-                description: 'An error occurred while processing the file.',
+                title: 'Update Error',
+                description: 'Failed to update your profile picture.',
             });
+        } finally {
             setUploading(false);
         }
     };
