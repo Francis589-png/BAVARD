@@ -144,68 +144,42 @@ export default function ChatPage() {
   
     const allUserIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     if (allUserIds.length === 0) {
-      setStories([]);
-      return;
+        setStories([]);
+        return;
     }
-  
-    const unsubscribes: (() => void)[] = [];
-    const allStories: Record<string, Story> = {};
-  
-    allUserIds.forEach(userId => {
-      const storiesCollection = collection(db, "stories");
-      const now = Timestamp.now();
-      const qStories = query(
-        storiesCollection,
-        where("userId", "==", userId),
-        where("expiresAt", ">", now)
-      );
-  
-      const unsubscribe = onSnapshot(qStories, async (snapshot) => {
-        let storiesChanged = false;
-        
-        // First, handle removals for this user
-        const newStoryIds = new Set(snapshot.docs.map(d => d.id));
-        Object.keys(allStories).forEach(storyId => {
-            if (allStories[storyId].userId === userId && !newStoryIds.has(storyId)) {
-                delete allStories[storyId];
-                storiesChanged = true;
-            }
-        });
 
-        // Then, handle additions/updates
+    const storiesCollection = collection(db, "stories");
+    const now = Timestamp.now();
+    const qStories = query(
+        storiesCollection,
+        where("userId", "in", allUserIds),
+        where("expiresAt", ">", now)
+    );
+
+    const unsubscribe = onSnapshot(qStories, async (snapshot) => {
+        const fetchedStories: Story[] = [];
         for (const storyDoc of snapshot.docs) {
-          if (!allStories[storyDoc.id]) {
             const storyData = storyDoc.data();
             let storyUser;
-  
+
             if (storyData.userId === user.uid) {
-              storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
+                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
             } else {
-              storyUser = contacts.find(c => c.id === storyData.userId) || { id: storyData.userId, name: 'Unknown', avatar: '' };
+                const contact = contacts.find(c => c.id === storyData.userId);
+                storyUser = contact || { id: storyData.userId, name: 'Unknown', avatar: '' };
             }
-  
-            allStories[storyDoc.id] = {
-              id: storyDoc.id,
-              ...storyData,
-              userAvatar: storyUser.avatar,
-              userName: storyUser.name,
-            } as Story;
-            storiesChanged = true;
-          }
+            
+            fetchedStories.push({
+                id: storyDoc.id,
+                ...storyData,
+                userAvatar: storyUser.avatar,
+                userName: storyUser.name,
+            } as Story);
         }
-  
-        if (storiesChanged) {
-            const storiesArray = Object.values(allStories).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            setStories(storiesArray);
-        }
-      });
-  
-      unsubscribes.push(unsubscribe);
+        setStories(fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
     });
-  
-    return () => {
-      unsubscribes.forEach(unsub => unsub());
-    };
+
+    return () => unsubscribe();
   }, [user, contacts]);
 
 
@@ -436,15 +410,7 @@ export default function ChatPage() {
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
-      let chatUser: Partial<ChatUser> | null = null;
-      if(story.userId === user?.uid) {
-        chatUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
-      } else {
-        chatUser = contacts.find(c => c.id === story.userId) || null;
-      }
-      if(chatUser) {
-        acc.push({ ...chatUser, name: story.userName, avatar: story.userAvatar, id: story.userId});
-      }
+      acc.push({ id: story.userId, name: story.userName, avatar: story.userAvatar});
     }
     return acc;
   }, [] as Partial<ChatUser>[]);
@@ -638,3 +604,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
