@@ -7,12 +7,13 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Camera } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Camera, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { doc, updateDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 
 export default function ProfilePage() {
     const [user, setUser] = useState<User | null>(null);
@@ -103,6 +104,16 @@ export default function ProfilePage() {
             setUploading(false);
         }
     };
+    
+    const handleShareInvite = () => {
+        if (!user) return;
+        const inviteLink = `${window.location.origin}/add-contact?userId=${user.uid}`;
+        navigator.clipboard.writeText(inviteLink);
+        toast({
+            title: "Link Copied!",
+            description: "Your invitation link has been copied to the clipboard.",
+        });
+    };
 
     if (loading || !user) {
         return (
@@ -154,19 +165,32 @@ export default function ProfilePage() {
                          <Image src={imagePreview} alt="New profile preview" width={400} height={400} objectFit="cover" className="rounded-md aspect-square mx-auto" />
                      </div>
                    )}
-                </CardContent>
-                <CardFooter>
+                </eCardContent>
+                <CardFooter className="flex-col gap-4">
+                    {imageFile && (
+                        <Button
+                            className="w-full"
+                            onClick={handleUpdateProfilePicture}
+                            disabled={uploading}
+                        >
+                            {uploading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Upload className="mr-2 h-4 w-4" />
+                            )}
+                            {uploading ? "Saving..." : "Save New Picture"}
+                        </Button>
+                    )}
+                    
+                    <Separator />
+
                     <Button
                         className="w-full"
-                        onClick={handleUpdateProfilePicture}
-                        disabled={!imageFile || uploading}
+                        variant="outline"
+                        onClick={handleShareInvite}
                     >
-                        {uploading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <Upload className="mr-2 h-4 w-4" />
-                        )}
-                        {uploading ? "Uploading..." : "Save Changes"}
+                        <Share2 className="mr-2 h-4 w-4" />
+                        Share Invite Link
                     </Button>
                 </CardFooter>
             </Card>

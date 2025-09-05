@@ -1,10 +1,11 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -86,11 +87,18 @@ const addUserToFirestore = async (user: User) => {
 };
 
 
-export function LoginForm() {
+function LoginFormComponent() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+
+  const inviteUserId = searchParams.get('invite');
+
+  const getRedirectPath = () => {
+    return inviteUserId ? `/add-contact?userId=${inviteUserId}` : "/chat";
+  }
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -108,7 +116,7 @@ export function LoginForm() {
       const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
       await addUserToFirestore(userCredential.user);
       toast({ title: "Success", description: "Signed in successfully." });
-      router.push("/chat");
+      router.push(getRedirectPath());
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "Invalid email or password." });
       console.error(error);
@@ -131,7 +139,7 @@ export function LoginForm() {
         }
         
         toast({ title: "Success", description: "Account created successfully." });
-        router.push("/chat");
+        router.push(getRedirectPath());
 
     } catch (error: any) {
         let description = "Could not create account. Please try again.";
@@ -152,7 +160,7 @@ export function LoginForm() {
       const result = await signInWithPopup(auth, provider);
       await addUserToFirestore(result.user);
       toast({ title: "Success", description: "Signed in successfully with Google." });
-      router.push("/chat");
+      router.push(getRedirectPath());
     } catch (error) {
        toast({ variant: "destructive", title: "Error", description: "Could not sign in with Google. Please try again." });
        console.error("Google Sign-In Error:", error);
@@ -170,7 +178,10 @@ export function LoginForm() {
         </div>
         <CardTitle className="text-2xl">Welcome to BAVARD</CardTitle>
         <CardDescription>
-          Sign in or create an account to start chatting.
+          {inviteUserId 
+            ? "Sign in or create an account to connect with your friend."
+            : "Sign in or create an account to start chatting."
+          }
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -278,4 +289,12 @@ export function LoginForm() {
       </CardContent>
     </Card>
   );
+}
+
+export function LoginForm() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginFormComponent />
+    </Suspense>
+  )
 }
