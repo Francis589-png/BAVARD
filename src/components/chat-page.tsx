@@ -75,7 +75,7 @@ export default function ChatPage() {
   const [uploading, setUploading] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   
-  const [hasMicPermission, setHasMicPermission] = useState(false);
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -110,18 +110,12 @@ export default function ChatPage() {
 
   // Check for microphone permission on initial load
   useEffect(() => {
-    const checkMicPermission = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            setHasMicPermission(true);
-            // We got the stream, but we should close it immediately as we are just checking for permission.
-            stream.getTracks().forEach(track => track.stop());
-        } catch (error) {
-            console.error("Microphone permission check failed:", error);
-            setHasMicPermission(false);
-        }
-    };
-    checkMicPermission();
+    navigator.permissions.query({ name: 'microphone' as PermissionName }).then(permissionStatus => {
+        setHasMicPermission(permissionStatus.state === 'granted');
+        permissionStatus.onchange = () => {
+            setHasMicPermission(permissionStatus.state === 'granted');
+        };
+    });
   }, []);
 
 
@@ -422,14 +416,11 @@ export default function ChatPage() {
   };
   
   const startRecording = async () => {
-    if (!hasMicPermission) {
-        toast({ variant: "destructive", title: "Microphone Permission Denied", description: "Please enable microphone access in your browser settings." });
-        return;
-    }
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasMicPermission(true);
         streamRef.current = stream;
-        mediaRecorderRef.current = new MediaRecorder(stream);
+        mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         audioChunksRef.current = [];
 
         mediaRecorderRef.current.ondataavailable = (event) => {
@@ -438,13 +429,16 @@ export default function ChatPage() {
             }
         };
 
-        mediaRecorderRef.current.onstop = async () => {
+        mediaRecorderRef.current.onstop = () => {
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-             if (audioBlob.size > 0) {
-                await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+            if (audioBlob.size > 0) {
+                handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
             } else {
                 toast({ variant: "destructive", title: "Recording Failed", description: "The recording was empty. Please try again." });
             }
+             // Clean up stream resources
+            streamRef.current?.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
         };
 
         mediaRecorderRef.current.start();
@@ -459,8 +453,6 @@ export default function ChatPage() {
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.stop();
-        streamRef.current?.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
         setIsRecording(false);
     }
   };
@@ -491,8 +483,8 @@ export default function ChatPage() {
     }
     const onEnded = () => setPlayingAudioId(null);
     const onPause = () => {
-        if (audioElement.currentTime === audioElement.duration) {
-            setPlayingAudioId(null);
+        if (playingAudioId !== null) {
+          setPlayingAudioId(null);
         }
     };
     const onError = (e: any) => {
@@ -531,7 +523,7 @@ export default function ChatPage() {
         audioElement.removeEventListener('pause', onPause);
         audioElement.removeEventListener('error', onError);
     };
-  }, [toast]);
+  }, [playingAudioId, toast]);
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -654,10 +646,10 @@ export default function ChatPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                        {!hasMicPermission && (
+                        {hasMicPermission === false && (
                             <Alert variant="destructive">
                                 <AlertCircle className="h-4 w-4" />
-                                <AlertTitle>Microphone Access Required</AlertTitle>
+                                <AlertTitle>Microphone Access Denied</AlertTitle>
                                 <AlertDescription>
                                     Please allow microphone access in your browser to send voice messages.
                                 </AlertDescription>
@@ -715,7 +707,7 @@ export default function ChatPage() {
                                 onMouseUp={stopRecording}
                                 onTouchStart={startRecording}
                                 onTouchEnd={stopRecording}
-                                disabled={!isOnline || !hasMicPermission}
+                                disabled={!isOnline || hasMicPermission === false}
                             >
                                 <Mic className="w-5 h-5" />
                                 <span className="sr-only">Record voice message</span>
