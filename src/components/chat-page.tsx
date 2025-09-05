@@ -130,7 +130,10 @@ export default function ChatPage() {
           const contactsQuery = query(usersCollection, where('__name__', 'in', contactIds));
 
           const unsubscribeUsers = onSnapshot(contactsQuery, (querySnapshot) => {
-            const fetchedContacts = querySnapshot.docs.map(doc => doc.data() as ChatUser);
+            const fetchedContacts: ChatUser[] = [];
+            querySnapshot.forEach(doc => {
+              fetchedContacts.push({id: doc.id, ...doc.data()} as ChatUser)
+            });
             setContacts(fetchedContacts);
 
             if (selectedContact) {
@@ -376,7 +379,8 @@ export default function ChatPage() {
           return;
       }
 
-      const contactUser = querySnapshot.docs[0].data() as ChatUser;
+      const contactUserDoc = querySnapshot.docs[0];
+      const contactUser = { id: contactUserDoc.id, ...contactUserDoc.data() } as ChatUser;
       const contactId = contactUser.id;
 
       const contactDocRef = doc(db, "users", user.uid, "contacts", contactId);
@@ -634,8 +638,10 @@ export default function ChatPage() {
                                            </a>
                                        )}
                                        {message.type === 'audio' && message.url && (
-                                           <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleAudioAction(message)}>
-                                               {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                           <div className="flex items-center gap-2">
+                                               <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
+                                                    {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                               </Button>
                                                <span>Voice Message</span>
                                            </div>
                                        )}
@@ -650,11 +656,6 @@ export default function ChatPage() {
                                            <Volume2 className="w-4 h-4" />}
                                        </Button>
                                    )}
-                                    {!isMyMessage && message.type === 'audio' && (
-                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
-                                            {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                                       </Button>
-                                    )}
                                </div>
                            );
                        })}
