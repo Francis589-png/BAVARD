@@ -127,7 +127,6 @@ export default function ChatPage() {
   
         if (contactIds.length > 0) {
           const usersCollection = collection(db, 'users');
-          // No need to query all users, just the ones that are contacts.
           const contactsQuery = query(usersCollection, where('id', 'in', contactIds));
 
           const unsubscribeUsers = onSnapshot(contactsQuery, (querySnapshot) => {
@@ -157,13 +156,12 @@ export default function ChatPage() {
     );
   
     return () => unsubscribeContacts();
-  }, [user, selectContact, selectedContact]);
+  }, [user, selectContact]);
 
 
   useEffect(() => {
     if (!user) return;
     
-    // Get all unique user IDs from current user and contacts for the story query
     const userIdsForStories = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     
     if (userIdsForStories.length === 0) {
@@ -185,12 +183,11 @@ export default function ChatPage() {
         const usersData: Record<string, Partial<ChatUser>> = {};
 
         // Pre-populate with current user and contacts to avoid extra fetches
-        if (user) {
-            usersData[user.uid] = { name: user.displayName || "You", avatar: user.photoURL || '' };
+        if (user && user.displayName) {
+            usersData[user.uid] = { name: user.displayName, avatar: user.photoURL || '' };
         }
         contacts.forEach(c => { usersData[c.id] = c; });
 
-        // Fetch profiles for any story authors not in the current user's contacts
         const missingUserIds = authorIds.filter(id => !usersData[id]);
         if (missingUserIds.length > 0) {
             const usersRef = collection(db, 'users');
@@ -206,8 +203,8 @@ export default function ChatPage() {
             const author = usersData[story.userId] || { name: 'Unknown', avatar: '' };
             return {
                 ...story,
-                userName: author.name,
-                userAvatar: author.avatar
+                userName: author.name || 'Unknown User',
+                userAvatar: author.avatar || ''
             } as Story;
         }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
@@ -637,9 +634,9 @@ export default function ChatPage() {
                                               <span>{message.fileName || 'Download File'}</span>
                                            </a>
                                        )}
-                                       {message.type === 'audio' && (
-                                           <div className="flex items-center gap-2">
-                                               <Play className="w-4 h-4" />
+                                       {message.type === 'audio' && message.url && (
+                                           <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleAudioAction(message)}>
+                                               {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                                                <span>Voice Message</span>
                                            </div>
                                        )}
@@ -730,5 +727,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    

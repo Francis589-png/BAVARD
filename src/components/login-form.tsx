@@ -130,9 +130,9 @@ function LoginFormComponent() {
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
         await updateProfile(userCredential.user, { displayName: values.name });
-        // After updating profile, user object in userCredential is not updated, must reload
-        await userCredential.user.reload();
-        // Now create the user in Firestore with the updated details
+        
+        // After updating profile, the user object in userCredential is not immediately updated.
+        // We need to use the user from auth.currentUser after the update.
         const updatedUser = auth.currentUser;
         if(updatedUser) {
            await addUserToFirestore(updatedUser);

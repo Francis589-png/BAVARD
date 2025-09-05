@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -165,7 +164,7 @@ export default function ProfilePage() {
                          <Image src={imagePreview} alt="New profile preview" width={400} height={400} objectFit="cover" className="rounded-md aspect-square mx-auto" />
                      </div>
                    )}
-                </eCardContent>
+                </CardContent>
                 <CardFooter className="flex-col gap-4">
                     {imageFile && (
                         <Button

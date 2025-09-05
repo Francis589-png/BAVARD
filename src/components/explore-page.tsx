@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, UserPlus, ArrowLeft, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { collection, query, where, getDocs, doc, getDoc, writeBatch, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, writeBatch, serverTimestamp, onSnapshot, queryEqual } from "firebase/firestore";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -23,8 +23,7 @@ interface ChatUser {
 export default function ExplorePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [allUsers, setAllUsers] = useState<ChatUser[]>([]);
-  const [myContactIds, setMyContactIds] = useState<string[]>([]);
+  const [discoverUsers, setDiscoverUsers] = useState<ChatUser[]>([]);
   const [addingContactId, setAddingContactId] = useState<string | null>(null);
 
   const router = useRouter();
@@ -44,34 +43,36 @@ export default function ExplorePage() {
 
   useEffect(() => {
     if (user) {
-      // Get all users
-      const usersCollection = collection(db, "users");
-      const q = query(usersCollection, where("id", "!=", user.uid));
-      const unsubscribeUsers = onSnapshot(q, (querySnapshot) => {
-        const users: ChatUser[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          users.push({
-            id: data.id,
-            name: data.name,
-            avatar: data.avatar,
-            email: data.email
-          });
-        });
-        setAllUsers(users);
-        setLoading(false);
-      });
+      const usersRef = collection(db, "users");
+      const contactsRef = collection(db, "users", user.uid, "contacts");
       
-      // Get my contacts
-      const contactsCollection = collection(db, "users", user.uid, "contacts");
-      const unsubscribeContacts = onSnapshot(contactsCollection, (snapshot) => {
-          setMyContactIds(snapshot.docs.map(doc => doc.id));
+      const unsubscribe = onSnapshot(contactsRef, async (contactsSnapshot) => {
+          const myContactIds = contactsSnapshot.docs.map(doc => doc.id);
+          const idsToExclude = [user.uid, ...myContactIds];
+          
+          // To use 'not-in' query, the array cannot be empty.
+          if (idsToExclude.length === 0) { 
+             idsToExclude.push("placeholder-for-query"); // Should not happen if user is logged in
+          }
+
+          const discoverQuery = query(usersRef, where("id", "not-in", idsToExclude));
+          
+          const usersSnapshot = await getDocs(discoverQuery);
+          const users: ChatUser[] = [];
+          usersSnapshot.forEach((doc) => {
+              const data = doc.data();
+              users.push({
+                  id: data.id,
+                  name: data.name,
+                  avatar: data.avatar,
+                  email: data.email
+              });
+          });
+          setDiscoverUsers(users);
+          setLoading(false);
       });
 
-      return () => {
-        unsubscribeUsers();
-        unsubscribeContacts();
-      };
+      return () => unsubscribe();
     }
   }, [user]);
   
@@ -80,13 +81,6 @@ export default function ExplorePage() {
       setAddingContactId(contact.id);
 
       const contactDocRef = doc(db, "users", user.uid, "contacts", contact.id);
-      const contactDoc = await getDoc(contactDocRef);
-
-      if (contactDoc.exists()) {
-          toast({ title: "Already a contact", description: `${contact.name} is already in your contacts.` });
-          setAddingContactId(null);
-          return;
-      }
       
       const batch = writeBatch(db);
       batch.set(contactDocRef, { addedAt: serverTimestamp() });
@@ -97,6 +91,7 @@ export default function ExplorePage() {
       try {
         await batch.commit();
         toast({ title: "Contact Added", description: `You and ${contact.name} are now contacts.` });
+        // The onSnapshot listener will automatically update the discoverUsers list
       } catch (error) {
         console.error("Add contact error", error);
         toast({ variant: "destructive", title: "Error", description: "Failed to add contact." });
@@ -105,7 +100,6 @@ export default function ExplorePage() {
       }
   };
 
-  const usersToDisplay = allUsers.filter(u => !myContactIds.includes(u.id));
 
   if (loading || !user) {
     return (
@@ -130,9 +124,9 @@ export default function ExplorePage() {
         </header>
 
         <main className="p-4 md:p-6">
-            {usersToDisplay.length > 0 ? (
+            {discoverUsers.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {usersToDisplay.map((u) => (
+                    {discoverUsers.map((u) => (
                         <Card key={u.id}>
                             <CardContent className="flex flex-col items-center justify-center p-6">
                                 <Avatar className="h-20 w-20 mb-4">
@@ -141,6 +135,7 @@ export default function ExplorePage() {
                                 </Avatar>
                                 <h3 className="font-semibold text-lg text-center truncate w-full">{u.name}</h3>
                                 <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>
+
                                 <Button 
                                     className="mt-4 w-full"
                                     onClick={() => handleAddContact(u)}
@@ -158,7 +153,7 @@ export default function ExplorePage() {
                     ))}
                 </div>
             ) : (
-                <div className="flex flex-col items-center justify-center text-center p-10 border-2 border-dashed rounded-lg">
+                <div className="flex flex-col items-center justify-center text-center p-10 border-2 border-dashed rounded-lg mt-8">
                     <h2 className="text-2xl font-semibold mt-4">All Caught Up!</h2>
                     <p className="text-muted-foreground mt-2">
                         There are no new users to discover right now.
