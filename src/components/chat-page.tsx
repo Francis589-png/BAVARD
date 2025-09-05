@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Play, Pause, AlertCircle } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -75,18 +75,8 @@ export default function ChatPage() {
   const [uploading, setUploading] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   
-  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
-  
   const [stories, setStories] = useState<Story[]>([]);
   const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
-
-  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
 
   const router = useRouter();
   const { toast } = useToast();
@@ -107,16 +97,6 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [router]);
-
-  // Check for microphone permission on initial load
-  useEffect(() => {
-    navigator.permissions.query({ name: 'microphone' as PermissionName }).then(permissionStatus => {
-        setHasMicPermission(permissionStatus.state === 'granted');
-        permissionStatus.onchange = () => {
-            setHasMicPermission(permissionStatus.state === 'granted');
-        };
-    });
-  }, []);
 
 
   const selectContact = useCallback((contact: ChatUser | null) => {
@@ -415,106 +395,6 @@ export default function ChatPage() {
       setIsAddContactOpen(false);
   };
   
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setHasMicPermission(true);
-      streamRef.current = stream;
-
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        if (audioBlob.size > 0) {
-          handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
-        } else {
-          toast({ variant: "destructive", title: "Recording Failed", description: "The recording was empty. Please try again." });
-        }
-        
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-          streamRef.current = null;
-        }
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        setHasMicPermission(false);
-        toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please allow microphone access in your browser settings." });
-      } else {
-        setHasMicPermission(false);
-        toast({ variant: "destructive", title: "Microphone Error", description: "Could not access microphone." });
-      }
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-   const handleAudioPlay = (message: Message) => {
-    if (!audioRef.current || !message.url) return;
-    
-    if (playingAudioId === message.id) {
-        audioRef.current.pause();
-        // The onPause event will set playingAudioId to null
-    } else {
-        setPlayingAudioId(message.id);
-        audioRef.current.src = message.url;
-        audioRef.current.load(); // This triggers the 'canplaythrough' event
-    }
-  };
-  
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    const onCanPlay = () => {
-      audioElement.play().catch(e => {
-        console.error("Audio play error:", e);
-        toast({ variant: "destructive", title: "Playback Error", description: "Could not play audio." });
-        setPlayingAudioId(null);
-      });
-    }
-    const onEnded = () => setPlayingAudioId(null);
-    const onPause = () => {
-        // Only reset state if it was actively playing this track
-        // This prevents state change on src change
-        if (!audioElement.ended) {
-          setPlayingAudioId(null);
-        }
-    };
-    const onError = () => {
-        toast({ variant: "destructive", title: "Playback Error", description: "Failed to load audio. The source might be invalid or unsupported." });
-        setPlayingAudioId(null);
-    }
-    
-    audioElement.addEventListener('canplaythrough', onCanPlay);
-    audioElement.addEventListener('ended', onEnded);
-    audioElement.addEventListener('pause', onPause);
-    audioElement.addEventListener('error', onError);
-
-    return () => {
-        audioElement.removeEventListener('canplaythrough', onCanPlay);
-        audioElement.removeEventListener('ended', onEnded);
-        audioElement.removeEventListener('pause', onPause);
-        audioElement.removeEventListener('error', onError);
-    };
-  }, [toast]);
-
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
       acc.push({ id: story.userId, name: story.userName, avatar: story.userAvatar});
@@ -636,18 +516,8 @@ export default function ChatPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                        {hasMicPermission === false && (
-                            <Alert>
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertTitle>Microphone Access Required</AlertTitle>
-                                <AlertDescription>
-                                    Please allow microphone access in your browser settings to send voice messages.
-                                </AlertDescription>
-                            </Alert>
-                        )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
-                           const isAudioPlaying = playingAudioId === message.id;
 
                            return (
                                <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
@@ -663,12 +533,9 @@ export default function ChatPage() {
                                               <span>{message.fileName || 'Download File'}</span>
                                            </a>
                                        )}
-                                       {message.type === 'audio' && message.url && (
+                                       {message.type === 'audio' && (
                                            <div className="flex items-center gap-2">
-                                               <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioPlay(message)} disabled={!isOnline}>
-                                                    {isAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                                               </Button>
-                                               <span>Voice Message</span>
+                                               <span>Voice message (unavailable)</span>
                                            </div>
                                        )}
                                        <p className="text-xs text-right opacity-70 mt-1">
@@ -688,28 +555,14 @@ export default function ChatPage() {
                                 <span className="sr-only">Attach file</span>
                             </Button>
                              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                             <Button 
-                                type="button" 
-                                size="icon" 
-                                variant={isRecording ? "destructive" : "ghost"}
-                                className={isRecording ? "animate-pulse" : ""}
-                                onMouseDown={startRecording}
-                                onMouseUp={stopRecording}
-                                onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
-                                onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
-                                disabled={!isOnline || hasMicPermission === false}
-                            >
-                                <Mic className="w-5 h-5" />
-                                <span className="sr-only">Record voice message</span>
-                            </Button>
                             <Input 
                                 placeholder={isOnline ? "Type a message..." : "You are offline"}
                                 className="flex-1"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
-                                disabled={uploading || isRecording || !isOnline}
+                                disabled={uploading || !isOnline}
                              />
-                            <Button type="submit" size="icon" disabled={uploading || isRecording || !isOnline || newMessage.trim() === ""}>
+                            <Button type="submit" size="icon" disabled={uploading || !isOnline || newMessage.trim() === ""}>
                                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             </Button>
                         </form>
@@ -749,9 +602,6 @@ export default function ChatPage() {
                 onClose={() => setViewingStoryForUser(null)}
             />
         )}
-        <audio ref={audioRef} className="hidden" />
     </SidebarProvider>
   );
 }
-
-    
