@@ -118,62 +118,55 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-
-    const contactsCollection = collection(db, "users", user.uid, "contacts");
-    const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
-        const contactIds = snapshot.docs.map(doc => doc.id);
-
+  
+    const contactsCollection = collection(db, 'users', user.uid, 'contacts');
+    const unsubscribeContacts = onSnapshot(
+      contactsCollection,
+      async (snapshot) => {
+        const contactIds = snapshot.docs.map((doc) => doc.id);
+  
         if (contactIds.length > 0) {
-            const usersCollection = collection(db, "users");
-            // Listen to all users to get real-time presence updates for contacts
-            const unsubscribeUsers = onSnapshot(usersCollection, (querySnapshot) => {
-                const allUsers: ChatUser[] = [];
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    allUsers.push({
-                      id: data.id,
-                      name: data.name,
-                      avatar: data.avatar,
-                      online: data.online,
-                      email: data.email
-                    });
-                });
-                
-                const fetchedContacts = allUsers.filter(u => contactIds.includes(u.id));
-                setContacts(fetchedContacts);
+          const usersCollection = collection(db, 'users');
+          // No need to query all users, just the ones that are contacts.
+          const contactsQuery = query(usersCollection, where('id', 'in', contactIds));
 
-                // Update selected contact data if it exists in the new list
-                if (selectedContact) {
-                    const updatedSelected = fetchedContacts.find(c => c.id === selectedContact.id);
-                    if (updatedSelected) {
-                        setSelectedContact(updatedSelected);
-                    } else {
-                        // Current selected contact removed, select first available
-                        selectContact(fetchedContacts[0] || null);
-                    }
-                } else {
-                    const prevSelectedId = sessionStorage.getItem('selectedContactId');
-                    const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
-                    selectContact(contactToSelect);
-                }
-            });
-            return () => unsubscribeUsers();
+          const unsubscribeUsers = onSnapshot(contactsQuery, (querySnapshot) => {
+            const fetchedContacts = querySnapshot.docs.map(doc => doc.data() as ChatUser);
+            setContacts(fetchedContacts);
+
+            if (selectedContact) {
+              const updatedSelectedContact = fetchedContacts.find(c => c.id === selectedContact.id);
+              if (updatedSelectedContact) {
+                setSelectedContact(updatedSelectedContact);
+              } else {
+                 selectContact(fetchedContacts[0] || null);
+              }
+            } else {
+               const prevSelectedId = sessionStorage.getItem('selectedContactId');
+               const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
+               selectContact(contactToSelect);
+            }
+          });
+          return () => unsubscribeUsers();
+
         } else {
-            setContacts([]);
-            selectContact(null);
+          setContacts([]);
+          selectContact(null);
         }
-    });
-    
+      }
+    );
+  
     return () => unsubscribeContacts();
-  }, [user, selectContact]);
+  }, [user, selectContact, selectedContact]);
 
 
   useEffect(() => {
     if (!user) return;
     
-    const userAndContactIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
+    // Get all unique user IDs from current user and contacts for the story query
+    const userIdsForStories = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     
-    if (userAndContactIds.length === 0) {
+    if (userIdsForStories.length === 0) {
         setStories([]);
         return;
     }
@@ -181,31 +174,31 @@ export default function ChatPage() {
     const now = Timestamp.now();
     const storiesQuery = query(
         collection(db, "stories"),
-        where("userId", "in", userAndContactIds),
+        where("userId", "in", userIdsForStories),
         where("expiresAt", ">", now)
     );
     
     const unsubscribeStories = onSnapshot(storiesQuery, async (snapshot) => {
         const storiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Omit<Story, 'userName' | 'userAvatar'>[];
         
-        const userIds = Array.from(new Set(storiesData.map(s => s.userId)));
-        const usersData: Record<string, ChatUser> = {};
+        const authorIds = Array.from(new Set(storiesData.map(s => s.userId)));
+        const usersData: Record<string, Partial<ChatUser>> = {};
 
-        // Populate from current user and contacts first
+        // Pre-populate with current user and contacts to avoid extra fetches
         if (user) {
-            usersData[user.uid] = { id: user.uid, name: user.displayName || "You", avatar: user.photoURL || '', email: user.email || '', online: true };
+            usersData[user.uid] = { name: user.displayName || "You", avatar: user.photoURL || '' };
         }
         contacts.forEach(c => { usersData[c.id] = c; });
 
-        // Fetch any missing user profiles
-        const missingUserIds = userIds.filter(id => !usersData[id]);
+        // Fetch profiles for any story authors not in the current user's contacts
+        const missingUserIds = authorIds.filter(id => !usersData[id]);
         if (missingUserIds.length > 0) {
             const usersRef = collection(db, 'users');
             const missingUsersQuery = query(usersRef, where('id', 'in', missingUserIds));
             const missingUsersSnapshot = await getDocs(missingUsersQuery);
             missingUsersSnapshot.forEach(doc => {
                 const userData = doc.data();
-                usersData[doc.id] = { id: doc.id, name: userData.name, avatar: userData.avatar, email: userData.email, online: userData.online };
+                usersData[doc.id] = { name: userData.name, avatar: userData.avatar };
             });
         }
         
@@ -450,15 +443,17 @@ export default function ChatPage() {
         if (isCurrentlyPlaying) {
             audioRef.current.pause();
             setIsAudioPlaying(false);
+            setPlayingAudioId(null);
         } else {
-            // Stop any currently playing audio
-            audioRef.current.pause();
+            if (audioRef.current.src) {
+                audioRef.current.pause();
+            }
             
-            let audioUrl = message.url;
+            let audioUrl: string | undefined;
 
-            // If it's a text message, we need to generate TTS
             if (message.type === 'text' && message.text) {
-                setPlayingAudioId(message.id); // Show loading state
+                setPlayingAudioId(message.id); // Show loading state for TTS
+                setIsAudioPlaying(false);
                 try {
                     const ttsResponse = await textToSpeech(message.text);
                     audioUrl = ttsResponse.media;
@@ -467,18 +462,26 @@ export default function ChatPage() {
                     toast({
                         variant: "destructive",
                         title: "Playback Error",
-                        description: "Could not play audio for this message.",
+                        description: "Could not generate audio for this message.",
                     });
                     setPlayingAudioId(null);
                     return;
                 }
+            } else if (message.type === 'audio' && message.url) {
+                audioUrl = message.url;
             }
 
             if (audioUrl) {
                 audioRef.current.src = audioUrl;
-                audioRef.current.play().catch(e => console.error("Audio play error:", e));
-                setPlayingAudioId(message.id);
-                setIsAudioPlaying(true);
+                audioRef.current.play().then(() => {
+                    setPlayingAudioId(message.id);
+                    setIsAudioPlaying(true);
+                }).catch(e => {
+                    console.error("Audio play error:", e);
+                    toast({ variant: "destructive", title: "Playback Error", description: "Could not play the audio file."});
+                    setPlayingAudioId(null);
+                });
+
                 audioRef.current.onended = () => {
                     setIsAudioPlaying(false);
                     setPlayingAudioId(null);
@@ -608,44 +611,52 @@ export default function ChatPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                       {messages.map((message) => (
-                           <div key={message.id} className={`flex items-end gap-2 ${message.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
-                                {message.senderId === user.uid && (message.type === 'text' || message.type === 'audio') && (
-                                     <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
-                                        {playingAudioId === message.id && isAudioPlaying ? <Pause className="w-4 h-4" /> : 
-                                         playingAudioId === message.id && !isAudioPlaying ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                         message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                                    </Button>
-                                )}
-                               <div className={`rounded-lg px-4 py-2 max-w-sm ${message.senderId === user.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                   {message.type === 'text' && <p>{message.text}</p>}
-                                   {message.type === 'image' && message.url && (
-                                       <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
+                       {messages.map((message) => {
+                           const isMyMessage = message.senderId === user.uid;
+                           const showAudioButton = message.type === 'text' || message.type === 'audio';
+                           const isAudioMessagePlaying = playingAudioId === message.id && isAudioPlaying;
+                           const isAudioMessageLoading = playingAudioId === message.id && !isAudioPlaying;
+
+                           return (
+                               <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                                   {isMyMessage && showAudioButton && (
+                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
+                                           {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
+                                            isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                                            message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                       </Button>
                                    )}
-                                   {message.type === 'file' && message.url && (
-                                       <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
-                                          <Download className="w-4 h-4"/>
-                                          <span>{message.fileName || 'Download File'}</span>
-                                       </a>
+                                   <div className={`rounded-lg px-4 py-2 max-w-sm ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                       {message.type === 'text' && <p>{message.text}</p>}
+                                       {message.type === 'image' && message.url && (
+                                           <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
+                                       )}
+                                       {message.type === 'file' && message.url && (
+                                           <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
+                                              <Download className="w-4 h-4"/>
+                                              <span>{message.fileName || 'Download File'}</span>
+                                           </a>
+                                       )}
+                                       {message.type === 'audio' && (
+                                           <div className="flex items-center gap-2">
+                                               <Play className="w-4 h-4" />
+                                               <span>Voice Message</span>
+                                           </div>
+                                       )}
+                                       <p className="text-xs text-right opacity-70 mt-1">
+                                           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                       </p>
+                                   </div>
+                                   {!isMyMessage && showAudioButton && (
+                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
+                                           {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
+                                            isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                                            message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                       </Button>
                                    )}
-                                    {message.type === 'audio' && message.url && (
-                                        <div className="flex items-center gap-2">
-                                           <span>Voice Message</span>
-                                        </div>
-                                   )}
-                                   <p className="text-xs text-right opacity-70 mt-1">
-                                    {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                   </p>
                                </div>
-                                {message.senderId !== user.uid && (message.type === 'text' || message.type === 'audio') && (
-                                    <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
-                                        {playingAudioId === message.id && isAudioPlaying ? <Pause className="w-4 h-4" /> : 
-                                         playingAudioId === message.id && !isAudioPlaying ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                         message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                                   </Button>
-                                )}
-                           </div>
-                       ))}
+                           );
+                       })}
                        <div ref={messagesEndRef} />
                     </main>
 
