@@ -1,5 +1,5 @@
 // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 // TODO: Add SDKs for Firebase products that you want to use
@@ -15,9 +15,34 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+let app;
+let auth;
+let db;
+
+// Prevent multiple initializations
+if (firebaseConfig.apiKey && firebaseConfig.projectId && !getApps().length) {
+  try {
+    app = initializeApp(firebase_config);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.error('Failed to initialize Firebase', e);
+  }
+} else {
+    // If we're on the client side, we can create dummy instances.
+    // This is useful for storybook or other environments where you might not have env vars.
+    if (typeof window !== 'undefined') {
+        app = getApps()[0]; // if already initialized, use that
+        if (!app) {
+             console.warn("Firebase config not found, using placeholder. Some features may not work.");
+             // You can initialize with dummy values if you want to test UI components
+             // that depend on these objects but don't actively use them.
+             app = initializeApp({apiKey: "dummy", projectId: "dummy"});
+        }
+        auth = getAuth(app);
+        db = getFirestore(app);
+    }
+}
+
 
 export { app, auth, db };
