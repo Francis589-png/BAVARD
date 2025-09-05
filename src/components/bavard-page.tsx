@@ -17,13 +17,13 @@ const BavardPage: ComponentType = () => {
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="px-4 lg:px-6 h-14 flex items-center">
-        <Link href="#" className="flex items-center justify-center">
+        <Link href="/" className="flex items-center justify-center">
           <MessageCircleIcon className="h-6 w-6" />
           <span className="sr-only">BAVARD</span>
         </Link>
         <nav className="ml-auto flex gap-4 sm:gap-6">
           <Link
-            href="#"
+            href="#features"
             className="text-sm font-medium hover:underline underline-offset-4"
           >
             Features
@@ -69,7 +69,7 @@ const BavardPage: ComponentType = () => {
                     Open App
                   </Link>
                   <Link
-                    href="#"
+                    href="#features"
                     className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-8 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                   >
                     Learn More
@@ -87,7 +87,7 @@ const BavardPage: ComponentType = () => {
             </div>
           </div>
         </section>
-        <section className="w-full py-12 md:py-24 lg:py-32 bg-secondary">
+        <section id="features" className="w-full py-12 md:py-24 lg:py-32 bg-secondary">
           <div className="container px-4 md:px-6">
             <div className="flex flex-col items-center justify-center space-y-4 text-center">
               <div className="space-y-2">
