@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Play, Pause } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Play, Pause, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -74,6 +74,8 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  
+  const [hasMicPermission, setHasMicPermission] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -105,6 +107,23 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [router]);
+
+  // Check for microphone permission on initial load
+  useEffect(() => {
+    const checkMicPermission = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            setHasMicPermission(true);
+            // We got the stream, but we should close it immediately as we are just checking for permission.
+            stream.getTracks().forEach(track => track.stop());
+        } catch (error) {
+            console.error("Microphone permission check failed:", error);
+            setHasMicPermission(false);
+        }
+    };
+    checkMicPermission();
+  }, []);
+
 
   const selectContact = useCallback((contact: ChatUser | null) => {
     setSelectedContact(contact);
@@ -403,6 +422,10 @@ export default function ChatPage() {
   };
   
   const startRecording = async () => {
+    if (!hasMicPermission) {
+        toast({ variant: "destructive", title: "Microphone Permission Denied", description: "Please enable microphone access in your browser settings." });
+        return;
+    }
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
@@ -410,32 +433,35 @@ export default function ChatPage() {
         audioChunksRef.current = [];
 
         mediaRecorderRef.current.ondataavailable = (event) => {
-            audioChunksRef.current.push(event.data);
+            if (event.data.size > 0) {
+                audioChunksRef.current.push(event.data);
+            }
         };
 
         mediaRecorderRef.current.onstop = async () => {
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+             if (audioBlob.size > 0) {
+                await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+            } else {
+                toast({ variant: "destructive", title: "Recording Failed", description: "The recording was empty. Please try again." });
+            }
         };
 
         mediaRecorderRef.current.start();
         setIsRecording(true);
-        toast({ title: "Recording started..." });
     } catch (error) {
         console.error("Error accessing microphone:", error);
+        setHasMicPermission(false);
         toast({ variant: "destructive", title: "Microphone Error", description: "Could not access microphone. Please check permissions." });
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
         mediaRecorderRef.current.stop();
+        streamRef.current?.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
         setIsRecording(false);
-        toast({ title: "Recording stopped, uploading..." });
     }
   };
 
@@ -469,8 +495,28 @@ export default function ChatPage() {
             setPlayingAudioId(null);
         }
     };
-    const onError = () => {
-        toast({ variant: "destructive", title: "Playback Error", description: "Failed to load audio. The source might be invalid or unsupported." });
+    const onError = (e: any) => {
+        const error = e.target.error;
+        let errorMessage = 'Failed to load audio. The source might be invalid or unsupported.';
+        if (error) {
+            switch(error.code) {
+                case error.MEDIA_ERR_ABORTED:
+                    errorMessage = 'Audio playback was aborted.';
+                    break;
+                case error.MEDIA_ERR_NETWORK:
+                    errorMessage = 'A network error caused the audio to fail to load.';
+                    break;
+                case error.MEDIA_ERR_DECODE:
+                    errorMessage = 'The audio could not be decoded.';
+                    break;
+                case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                    errorMessage = 'The audio source is not supported.';
+                    break;
+                default:
+                    break;
+            }
+        }
+        toast({ variant: "destructive", title: "Playback Error", description: errorMessage });
         setPlayingAudioId(null);
     }
     
@@ -608,6 +654,15 @@ export default function ChatPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
+                        {!hasMicPermission && (
+                            <Alert variant="destructive">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertTitle>Microphone Access Required</AlertTitle>
+                                <AlertDescription>
+                                    Please allow microphone access in your browser to send voice messages.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
                            const isAudioPlaying = playingAudioId === message.id;
@@ -655,11 +710,12 @@ export default function ChatPage() {
                                 type="button" 
                                 size="icon" 
                                 variant={isRecording ? "destructive" : "ghost"}
+                                className={isRecording ? "animate-pulse" : ""}
                                 onMouseDown={startRecording}
                                 onMouseUp={stopRecording}
                                 onTouchStart={startRecording}
                                 onTouchEnd={stopRecording}
-                                disabled={!isOnline}
+                                disabled={!isOnline || !hasMicPermission}
                             >
                                 <Mic className="w-5 h-5" />
                                 <span className="sr-only">Record voice message</span>
@@ -715,3 +771,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
