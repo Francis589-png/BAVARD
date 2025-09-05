@@ -417,6 +417,14 @@ export default function ChatPage() {
   
   const startRecording = async () => {
     try {
+        if (!hasMicPermission) {
+            const permissionResult = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+            if (permissionResult.state === 'denied') {
+                 toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please allow microphone access in your browser settings." });
+                 return;
+            }
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setHasMicPermission(true);
         streamRef.current = stream;
@@ -436,7 +444,7 @@ export default function ChatPage() {
             } else {
                 toast({ variant: "destructive", title: "Recording Failed", description: "The recording was empty. Please try again." });
             }
-            // Clean up stream resources after stopping
+             // Clean up stream resources after stopping
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
                 streamRef.current = null;
@@ -485,32 +493,13 @@ export default function ChatPage() {
     }
     const onEnded = () => setPlayingAudioId(null);
     const onPause = () => {
-        if (playingAudioId !== null) {
-          setPlayingAudioId(null);
+        // Only reset state if it was actively playing this track
+        if (audioElement.src) {
+           setPlayingAudioId(null);
         }
     };
     const onError = (e: any) => {
-        const error = e.target.error;
-        let errorMessage = 'Failed to load audio. The source might be invalid or unsupported.';
-        if (error) {
-            switch(error.code) {
-                case error.MEDIA_ERR_ABORTED:
-                    errorMessage = 'Audio playback was aborted.';
-                    break;
-                case error.MEDIA_ERR_NETWORK:
-                    errorMessage = 'A network error caused the audio to fail to load.';
-                    break;
-                case error.MEDIA_ERR_DECODE:
-                    errorMessage = 'The audio could not be decoded.';
-                    break;
-                case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                    errorMessage = 'The audio source is not supported.';
-                    break;
-                default:
-                    break;
-            }
-        }
-        toast({ variant: "destructive", title: "Playback Error", description: errorMessage });
+        toast({ variant: "destructive", title: "Playback Error", description: "Failed to load audio. The source might be invalid or unsupported." });
         setPlayingAudioId(null);
     }
     
@@ -525,7 +514,7 @@ export default function ChatPage() {
         audioElement.removeEventListener('pause', onPause);
         audioElement.removeEventListener('error', onError);
     };
-  }, [playingAudioId, toast]);
+  }, [toast]);
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -649,11 +638,11 @@ export default function ChatPage() {
                             </Alert>
                         )}
                         {hasMicPermission === false && (
-                            <Alert variant="destructive">
+                            <Alert>
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertTitle>Microphone Access Denied</AlertTitle>
                                 <AlertDescription>
-                                    Please allow microphone access in your browser to send voice messages.
+                                    Please allow microphone access in your browser settings to send voice messages.
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -765,5 +754,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    

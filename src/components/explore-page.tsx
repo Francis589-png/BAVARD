@@ -133,8 +133,8 @@ export default function ExplorePage() {
                                     <AvatarImage src={u.avatar} alt={u.name} />
                                     <AvatarFallback>{u.name?.charAt(0) || u.email?.charAt(0) || 'U'}</AvatarFallback>
                                 </Avatar>
-                                <h3 className="font-semibold text-lg text-center truncate w-full">{u.name}</h3>
-                                <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>
+                                <h3 className="font-semibold text-lg text-center truncate w-full">{u.name || u.email}</h3>
+                                {u.name && <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>}
 
                                 <Button 
                                     className="mt-4 w-full"
