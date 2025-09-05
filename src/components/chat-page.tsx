@@ -127,7 +127,7 @@ export default function ChatPage() {
   
         if (contactIds.length > 0) {
           const usersCollection = collection(db, 'users');
-          const contactsQuery = query(usersCollection, where('id', 'in', contactIds));
+          const contactsQuery = query(usersCollection, where('__name__', 'in', contactIds));
 
           const unsubscribeUsers = onSnapshot(contactsQuery, (querySnapshot) => {
             const fetchedContacts = querySnapshot.docs.map(doc => doc.data() as ChatUser);
@@ -442,15 +442,15 @@ export default function ChatPage() {
             setIsAudioPlaying(false);
             setPlayingAudioId(null);
         } else {
-            if (audioRef.current.src) {
+            if (audioRef.current.src && !audioRef.current.paused) {
                 audioRef.current.pause();
             }
             
             let audioUrl: string | undefined;
 
             if (message.type === 'text' && message.text) {
-                setPlayingAudioId(message.id); // Show loading state for TTS
-                setIsAudioPlaying(false);
+                setPlayingAudioId(message.id); 
+                setIsAudioPlaying(false); // Show loading state for TTS
                 try {
                     const ttsResponse = await textToSpeech(message.text);
                     audioUrl = ttsResponse.media;
@@ -539,7 +539,7 @@ export default function ChatPage() {
                                     <div key={storyUser.id} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => setViewingStoryForUser(storyUser as ChatUser)}>
                                         <Avatar className="h-12 w-12 border-2 border-primary">
                                             <AvatarImage src={storyUser.avatar} />
-                                            <AvatarFallback>{storyUser.name?.charAt(0)}</AvatarFallback>
+                                            <AvatarFallback>{storyUser.name?.charAt(0) || '?'}</AvatarFallback>
                                         </Avatar>
                                         <span className="text-xs w-14 truncate text-center">{storyUser.name}</span>
                                     </div>
@@ -576,7 +576,7 @@ export default function ChatPage() {
                                {user.email?.charAt(0).toUpperCase() ?? <UserIcon />}
                             </AvatarFallback>
                         </Avatar>
-                        <span className="text-sm font-medium truncate">{user.email}</span>
+                        <span className="text-sm font-medium truncate">{user.displayName || user.email}</span>
                         <Button onClick={handleSignOut} variant="ghost" size="icon" className="ml-auto">
                             <LogOut className="w-5 h-5"/>
                         </Button>
@@ -610,17 +610,16 @@ export default function ChatPage() {
                         )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
-                           const showAudioButton = message.type === 'text' || message.type === 'audio';
                            const isAudioMessagePlaying = playingAudioId === message.id && isAudioPlaying;
                            const isAudioMessageLoading = playingAudioId === message.id && !isAudioPlaying;
 
                            return (
                                <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   {isMyMessage && showAudioButton && (
-                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
+                                   {isMyMessage && message.type === 'text' && (
+                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
                                            {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
                                             isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                            message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                            <Volume2 className="w-4 h-4" />}
                                        </Button>
                                    )}
                                    <div className={`rounded-lg px-4 py-2 max-w-sm ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
@@ -636,7 +635,7 @@ export default function ChatPage() {
                                        )}
                                        {message.type === 'audio' && message.url && (
                                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleAudioAction(message)}>
-                                               {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                               {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                                                <span>Voice Message</span>
                                            </div>
                                        )}
@@ -644,13 +643,18 @@ export default function ChatPage() {
                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                        </p>
                                    </div>
-                                   {!isMyMessage && showAudioButton && (
-                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline && message.type === 'text'}>
-                                           {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
-                                            isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                            message.type === 'text' ? <Volume2 className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                   {!isMyMessage && message.type === 'text' && (
+                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
+                                          {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
+                                           isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                                           <Volume2 className="w-4 h-4" />}
                                        </Button>
                                    )}
+                                    {!isMyMessage && message.type === 'audio' && (
+                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
+                                            {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                       </Button>
+                                    )}
                                </div>
                            );
                        })}
@@ -684,7 +688,7 @@ export default function ChatPage() {
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 disabled={uploading || isRecording || !isOnline}
                              />
-                            <Button type="submit" size="icon" disabled={uploading || isRecording || !isOnline}>
+                            <Button type="submit" size="icon" disabled={uploading || isRecording || !isOnline || newMessage.trim() === ""}>
                                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                             </Button>
                         </form>
@@ -720,10 +724,13 @@ export default function ChatPage() {
         {viewingStoryForUser && (
             <StoryViewer 
                 stories={stories.filter(s => s.userId === viewingStoryForUser.id)}
+                user={viewingStoryForUser}
                 onClose={() => setViewingStoryForUser(null)}
             />
         )}
-        <audio ref={audioRef} className="hidden" />
+        <audio ref={audioRef} className="hidden" onEnded={() => { setIsAudioPlaying(false); setPlayingAudioId(null);}} />
     </SidebarProvider>
   );
 }
+
+    
