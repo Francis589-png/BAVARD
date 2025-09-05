@@ -88,7 +88,35 @@ NEXT_PUBLIC_FIREBASE_APP_ID
 
 ---
 
-### 7. Pinata JWT
+### 7. Pinata API Key
+
+**Key:**
+```
+PINATA_API_KEY
+```
+
+**Value:**
+```
+465b17dfab856616f1df
+```
+
+---
+
+### 8. Pinata API Secret
+
+**Key:**
+```
+PINATA_API_SECRET
+```
+
+**Value:**
+```
+c7d8dc2dd776da0437c4db688b44357053a9af43c93751f22c3e139a8d22d81e
+```
+
+---
+
+### 9. Pinata JWT
 
 **Key:**
 ```
