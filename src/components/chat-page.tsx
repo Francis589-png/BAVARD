@@ -436,9 +436,11 @@ export default function ChatPage() {
             } else {
                 toast({ variant: "destructive", title: "Recording Failed", description: "The recording was empty. Please try again." });
             }
-             // Clean up stream resources
-            streamRef.current?.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
+            // Clean up stream resources after stopping
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+            }
         };
 
         mediaRecorderRef.current.start();
