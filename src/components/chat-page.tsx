@@ -187,7 +187,7 @@ export default function ChatPage() {
         if (user && user.displayName) {
             usersData[user.uid] = { name: user.displayName, avatar: user.photoURL || '' };
         }
-        contacts.forEach(c => { usersData[c.id] = c; });
+        contacts.forEach(c => { usersData[c.id] = { name: c.name, avatar: c.avatar }; });
 
         const missingUserIds = authorIds.filter(id => !usersData[id]);
         if (missingUserIds.length > 0) {
@@ -436,7 +436,7 @@ export default function ChatPage() {
 
    const handleAudioPlay = (message: Message) => {
     if (!audioRef.current || !message.url) return;
-
+    
     if (playingAudioId === message.id) {
         audioRef.current.pause();
     } else {
