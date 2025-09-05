@@ -437,63 +437,72 @@ export default function ChatPage() {
   };
 
    const handleAudioAction = async (message: Message) => {
-        if (!audioRef.current) return;
+    if (!audioRef.current) return;
 
-        const isCurrentlyPlayingThisMessage = playingAudioId === message.id && isAudioPlaying;
+    const isCurrentlyPlayingThisMessage = playingAudioId === message.id && isAudioPlaying;
 
-        if (isCurrentlyPlayingThisMessage) {
-            audioRef.current.pause();
+    if (isCurrentlyPlayingThisMessage) {
+      audioRef.current.pause();
+    } else {
+      if (playingAudioId) {
+        audioRef.current.pause();
+      }
+
+      setPlayingAudioId(message.id);
+      setIsAudioPlaying(false);
+
+      try {
+        let audioUrl: string | undefined;
+
+        if (message.type === 'audio' && message.url) {
+          audioUrl = message.url;
+        } else if (message.type === 'text' && message.text) {
+          const ttsResponse = await textToSpeech(message.text);
+          audioUrl = ttsResponse.media;
+        }
+
+        if (audioUrl) {
+          audioRef.current.src = audioUrl;
+          await audioRef.current.play();
+        } else {
+            setPlayingAudioId(null);
+        }
+      } catch (error) {
+        console.error("Audio action error:", error);
+        toast({
+          variant: "destructive",
+          title: "Playback Error",
+          description: "Could not play the audio for this message.",
+        });
+        setPlayingAudioId(null);
+      }
+    }
+  };
+  
+    useEffect(() => {
+        const audioElement = audioRef.current;
+        if (!audioElement) return;
+
+        const handlePlay = () => setIsAudioPlaying(true);
+        const handlePause = () => {
             setIsAudioPlaying(false);
             setPlayingAudioId(null);
-        } else {
-            // Stop any currently playing audio
-            if (audioRef.current.src && !audioRef.current.paused) {
-                audioRef.current.pause();
-            }
-            
-            let audioUrl: string | undefined;
+        };
+        const handleEnded = () => {
+            setIsAudioPlaying(false);
+            setPlayingAudioId(null);
+        };
+        
+        audioElement.addEventListener('play', handlePlay);
+        audioElement.addEventListener('pause', handlePause);
+        audioElement.addEventListener('ended', handleEnded);
 
-            // Case 1: Message is of type 'audio' (a recorded message)
-            if (message.type === 'audio' && message.url) {
-                audioUrl = message.url;
-            } 
-            // Case 2: Message is of type 'text' and we need to generate TTS
-            else if (message.type === 'text' && message.text) {
-                setPlayingAudioId(message.id); 
-                setIsAudioPlaying(false); // Show loading state for TTS
-                try {
-                    const ttsResponse = await textToSpeech(message.text);
-                    audioUrl = ttsResponse.media;
-                } catch (error) {
-                    console.error("TTS Error:", error);
-                    toast({
-                        variant: "destructive",
-                        title: "Playback Error",
-                        description: "Could not generate audio for this message.",
-                    });
-                    setPlayingAudioId(null);
-                    return;
-                }
-            }
-
-            if (audioUrl) {
-                audioRef.current.src = audioUrl;
-                audioRef.current.play().then(() => {
-                    setPlayingAudioId(message.id);
-                    setIsAudioPlaying(true);
-                }).catch(e => {
-                    console.error("Audio play error:", e);
-                    toast({ variant: "destructive", title: "Playback Error", description: "Could not play the audio file."});
-                    setPlayingAudioId(null);
-                });
-
-                audioRef.current.onended = () => {
-                    setIsAudioPlaying(false);
-                    setPlayingAudioId(null);
-                };
-            }
-        }
-    };
+        return () => {
+            audioElement.removeEventListener('play', handlePlay);
+            audioElement.removeEventListener('pause', handlePause);
+            audioElement.removeEventListener('ended', handleEnded);
+        };
+    }, []);
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -727,9 +736,7 @@ export default function ChatPage() {
                 onClose={() => setViewingStoryForUser(null)}
             />
         )}
-        <audio ref={audioRef} className="hidden" onEnded={() => { setIsAudioPlaying(false); setPlayingAudioId(null);}} />
+        <audio ref={audioRef} className="hidden" />
     </SidebarProvider>
   );
 }
-
-    
