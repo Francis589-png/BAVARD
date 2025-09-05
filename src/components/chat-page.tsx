@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Volume2, Play, Pause } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Mic, Download, UserPlus, Compass, PlusCircle, WifiOff, Play, Pause } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,6 @@ import {
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
-import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AddContactDialog } from "./add-contact-dialog";
 import Link from "next/link";
 import { StoryViewer } from "./story-viewer";
@@ -83,7 +82,6 @@ export default function ChatPage() {
   const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
 
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
 
@@ -436,73 +434,37 @@ export default function ChatPage() {
       }
   };
 
-   const handleAudioAction = async (message: Message) => {
-    if (!audioRef.current) return;
+   const handleAudioPlay = (message: Message) => {
+    if (!audioRef.current || !message.url) return;
 
-    const isCurrentlyPlayingThisMessage = playingAudioId === message.id && isAudioPlaying;
-
-    if (isCurrentlyPlayingThisMessage) {
-      audioRef.current.pause();
-    } else {
-      if (playingAudioId) {
+    if (playingAudioId === message.id) {
         audioRef.current.pause();
-      }
-
-      setPlayingAudioId(message.id);
-      setIsAudioPlaying(false);
-
-      try {
-        let audioUrl: string | undefined;
-
-        if (message.type === 'audio' && message.url) {
-          audioUrl = message.url;
-        } else if (message.type === 'text' && message.text) {
-          const ttsResponse = await textToSpeech(message.text);
-          audioUrl = ttsResponse.media;
-        }
-
-        if (audioUrl) {
-          audioRef.current.src = audioUrl;
-          await audioRef.current.play();
-        } else {
+    } else {
+        setPlayingAudioId(message.id);
+        audioRef.current.src = message.url;
+        audioRef.current.play().catch(e => {
+            console.error("Audio play error:", e);
+            toast({ variant: "destructive", title: "Playback Error", description: "Could not play audio." });
             setPlayingAudioId(null);
-        }
-      } catch (error) {
-        console.error("Audio action error:", error);
-        toast({
-          variant: "destructive",
-          title: "Playback Error",
-          description: "Could not play the audio for this message.",
         });
-        setPlayingAudioId(null);
-      }
     }
   };
   
-    useEffect(() => {
-        const audioElement = audioRef.current;
-        if (!audioElement) return;
+  useEffect(() => {
+    const audioElement = audioRef.current;
+    if (!audioElement) return;
 
-        const handlePlay = () => setIsAudioPlaying(true);
-        const handlePause = () => {
-            setIsAudioPlaying(false);
-            setPlayingAudioId(null);
-        };
-        const handleEnded = () => {
-            setIsAudioPlaying(false);
-            setPlayingAudioId(null);
-        };
-        
-        audioElement.addEventListener('play', handlePlay);
-        audioElement.addEventListener('pause', handlePause);
-        audioElement.addEventListener('ended', handleEnded);
+    const handleEnded = () => setPlayingAudioId(null);
+    const handlePause = () => setPlayingAudioId(null);
+    
+    audioElement.addEventListener('ended', handleEnded);
+    audioElement.addEventListener('pause', handlePause);
 
-        return () => {
-            audioElement.removeEventListener('play', handlePlay);
-            audioElement.removeEventListener('pause', handlePause);
-            audioElement.removeEventListener('ended', handleEnded);
-        };
-    }, []);
+    return () => {
+        audioElement.removeEventListener('ended', handleEnded);
+        audioElement.removeEventListener('pause', handlePause);
+    };
+  }, []);
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -627,8 +589,7 @@ export default function ChatPage() {
                         )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
-                           const isAudioMessagePlaying = playingAudioId === message.id && isAudioPlaying;
-                           const isAudioMessageLoading = playingAudioId === message.id && !isAudioPlaying;
+                           const isAudioPlaying = playingAudioId === message.id;
 
                            return (
                                <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
@@ -646,8 +607,8 @@ export default function ChatPage() {
                                        )}
                                        {message.type === 'audio' && message.url && (
                                            <div className="flex items-center gap-2">
-                                               <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
-                                                    {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> : isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                               <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioPlay(message)} disabled={!isOnline}>
+                                                    {isAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                                                </Button>
                                                <span>Voice Message</span>
                                            </div>
@@ -656,13 +617,6 @@ export default function ChatPage() {
                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                        </p>
                                    </div>
-                                   {message.type === 'text' && (
-                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
-                                          {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
-                                           isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                           <Volume2 className="w-4 h-4" />}
-                                       </Button>
-                                   )}
                                </div>
                            );
                        })}
