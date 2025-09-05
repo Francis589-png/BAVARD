@@ -4,9 +4,21 @@
 import { useState, useEffect } from 'react';
 
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(true);
+  const getInitialStatus = () => {
+    if (typeof window !== 'undefined' && typeof window.navigator !== 'undefined') {
+      return window.navigator.onLine;
+    }
+    return true; // Default to online on the server
+  };
+  
+  const [isOnline, setIsOnline] = useState(getInitialStatus);
 
   useEffect(() => {
+    // This check is to ensure this effect only runs on the client
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     function handleOnline() {
       setIsOnline(true);
     }
@@ -14,12 +26,6 @@ export function useOnlineStatus() {
     function handleOffline() {
       setIsOnline(false);
     }
-    
-    // Check initial status
-    if (typeof window !== 'undefined' && typeof window.navigator !== 'undefined') {
-        setIsOnline(window.navigator.onLine);
-    }
-
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);

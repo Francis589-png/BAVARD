@@ -439,14 +439,11 @@ export default function ChatPage() {
     
     if (playingAudioId === message.id) {
         audioRef.current.pause();
+        setPlayingAudioId(null);
     } else {
         setPlayingAudioId(message.id);
         audioRef.current.src = message.url;
-        audioRef.current.play().catch(e => {
-            console.error("Audio play error:", e);
-            toast({ variant: "destructive", title: "Playback Error", description: "Could not play audio." });
-            setPlayingAudioId(null);
-        });
+        audioRef.current.load();
     }
   };
   
@@ -454,17 +451,32 @@ export default function ChatPage() {
     const audioElement = audioRef.current;
     if (!audioElement) return;
 
-    const handleEnded = () => setPlayingAudioId(null);
-    const handlePause = () => setPlayingAudioId(null);
+    const onCanPlay = () => {
+      audioElement.play().catch(e => {
+        console.error("Audio play error:", e);
+        toast({ variant: "destructive", title: "Playback Error", description: "Could not play audio." });
+        setPlayingAudioId(null);
+      });
+    }
+    const onEnded = () => setPlayingAudioId(null);
+    const onPause = () => setPlayingAudioId(null);
+    const onError = () => {
+        toast({ variant: "destructive", title: "Playback Error", description: "Failed to load audio. The source might be invalid or unsupported." });
+        setPlayingAudioId(null);
+    }
     
-    audioElement.addEventListener('ended', handleEnded);
-    audioElement.addEventListener('pause', handlePause);
+    audioElement.addEventListener('canplaythrough', onCanPlay);
+    audioElement.addEventListener('ended', onEnded);
+    audioElement.addEventListener('pause', onPause);
+    audioElement.addEventListener('error', onError);
 
     return () => {
-        audioElement.removeEventListener('ended', handleEnded);
-        audioElement.removeEventListener('pause', handlePause);
+        audioElement.removeEventListener('canplaythrough', onCanPlay);
+        audioElement.removeEventListener('ended', onEnded);
+        audioElement.removeEventListener('pause', onPause);
+        audioElement.removeEventListener('error', onError);
     };
-  }, []);
+  }, [toast]);
 
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
