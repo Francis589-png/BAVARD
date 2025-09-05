@@ -55,7 +55,7 @@ export default function ProfilePage() {
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
-    }
+    };
 
     const handleUpdateProfilePicture = async () => {
         if (!imageFile || !user) {
