@@ -22,7 +22,7 @@ let db;
 // Prevent multiple initializations
 if (firebaseConfig.apiKey && firebaseConfig.projectId && !getApps().length) {
   try {
-    app = initializeApp(firebase_config);
+    app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
   } catch (e) {
