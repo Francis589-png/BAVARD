@@ -460,8 +460,8 @@ export default function ChatPage() {
             if (message.type === 'text' && message.text) {
                 setPlayingAudioId(message.id); // Show loading state
                 try {
-                    const { media } = await textToSpeech(message.text);
-                    audioUrl = media;
+                    const ttsResponse = await textToSpeech(message.text);
+                    audioUrl = ttsResponse.media;
                 } catch (error) {
                     console.error("TTS Error:", error);
                     toast({
@@ -719,3 +719,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
