@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
@@ -106,123 +106,123 @@ export default function ChatPage() {
     return () => unsubscribe();
   }, [router]);
 
-    useEffect(() => {
-        if (!user) return;
+  const selectContact = useCallback((contact: ChatUser | null) => {
+    setSelectedContact(contact);
+    if (contact) {
+      sessionStorage.setItem('selectedContactId', contact.id);
+    } else {
+      sessionStorage.removeItem('selectedContactId');
+    }
+  }, []);
 
-        const contactsCollection = collection(db, "users", user.uid, "contacts");
-        const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
-            const contactIds = snapshot.docs.map(doc => doc.id);
+  useEffect(() => {
+    if (!user) return;
 
-            if (contactIds.length > 0) {
-                const usersCollection = collection(db, "users");
-                // Although we have contactIds, we listen to all users to get real-time presence updates
-                // and then filter locally. This is less efficient but ensures we have data for story authoring.
-                // A better approach for larger apps would be a dedicated presence solution.
-                 onSnapshot(usersCollection, (querySnapshot) => {
-                    const allUsers: ChatUser[] = [];
-                    querySnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        allUsers.push({
-                          id: data.id,
-                          name: data.name,
-                          avatar: data.avatar,
-                          online: data.online,
-                          email: data.email
-                        });
+    const contactsCollection = collection(db, "users", user.uid, "contacts");
+    const unsubscribeContacts = onSnapshot(contactsCollection, async (snapshot) => {
+        const contactIds = snapshot.docs.map(doc => doc.id);
+
+        if (contactIds.length > 0) {
+            const usersCollection = collection(db, "users");
+            // Listen to all users to get real-time presence updates for contacts
+            const unsubscribeUsers = onSnapshot(usersCollection, (querySnapshot) => {
+                const allUsers: ChatUser[] = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    allUsers.push({
+                      id: data.id,
+                      name: data.name,
+                      avatar: data.avatar,
+                      online: data.online,
+                      email: data.email
                     });
-                    
-                    const fetchedContacts = allUsers.filter(u => contactIds.includes(u.id));
-                    setContacts(fetchedContacts);
-
-                    if (!selectedContact || !contactIds.includes(selectedContact.id)) {
-                        const prevSelectedId = sessionStorage.getItem('selectedContactId');
-                        const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
-                        setSelectedContact(contactToSelect);
-                    }
                 });
-            } else {
-                setContacts([]);
-                setSelectedContact(null);
-            }
-        });
-        
-        return () => unsubscribeContacts();
-    }, [user, selectedContact]);
+                
+                const fetchedContacts = allUsers.filter(u => contactIds.includes(u.id));
+                setContacts(fetchedContacts);
+
+                // Update selected contact data if it exists in the new list
+                if (selectedContact) {
+                    const updatedSelected = fetchedContacts.find(c => c.id === selectedContact.id);
+                    if (updatedSelected) {
+                        setSelectedContact(updatedSelected);
+                    } else {
+                        // Current selected contact removed, select first available
+                        selectContact(fetchedContacts[0] || null);
+                    }
+                } else {
+                    const prevSelectedId = sessionStorage.getItem('selectedContactId');
+                    const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
+                    selectContact(contactToSelect);
+                }
+            });
+            return () => unsubscribeUsers();
+        } else {
+            setContacts([]);
+            selectContact(null);
+        }
+    });
+    
+    return () => unsubscribeContacts();
+  }, [user, selectContact, selectedContact]);
 
 
   useEffect(() => {
     if (!user) return;
     
-    // Create a combined list of the current user's ID and their contacts' IDs
-    const userIdsToFetch = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
+    const userAndContactIds = Array.from(new Set([user.uid, ...contacts.map(c => c.id)]));
     
-    if (userIdsToFetch.length === 0) {
+    if (userAndContactIds.length === 0) {
         setStories([]);
         return;
     }
 
     const now = Timestamp.now();
-    const storiesCollection = collection(db, "stories");
-    const qStories = query(
-        storiesCollection,
-        where("userId", "in", userIdsToFetch),
+    const storiesQuery = query(
+        collection(db, "stories"),
+        where("userId", "in", userAndContactIds),
         where("expiresAt", ">", now)
     );
     
-    const unsubscribeStories = onSnapshot(qStories, async (snapshot) => {
-        const fetchedStories: Story[] = [];
-        const userPromises = snapshot.docs.map(async (storyDoc) => {
-            const storyData = storyDoc.data();
-            let storyUser: Partial<ChatUser> = {};
+    const unsubscribeStories = onSnapshot(storiesQuery, async (snapshot) => {
+        const storiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Omit<Story, 'userName' | 'userAvatar'>[];
+        
+        const userIds = Array.from(new Set(storiesData.map(s => s.userId)));
+        const usersData: Record<string, ChatUser> = {};
 
-            if (storyData.userId === user.uid) {
-                storyUser = { id: user.uid, name: "You", avatar: user.photoURL || '' };
-            } else {
-                // Find contact in state first
-                const contact = contacts.find(c => c.id === storyData.userId);
-                if (contact) {
-                    storyUser = contact;
-                } else {
-                    // If not found (e.g., race condition), fetch from DB
-                    const userDocRef = doc(db, 'users', storyData.userId);
-                    const userDoc = await getDoc(userDocRef);
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        storyUser = {
-                            id: userData.id,
-                            name: userData.name,
-                            avatar: userData.avatar,
-                        };
-                    } else {
-                        storyUser = { id: storyData.userId, name: 'Unknown', avatar: '' };
-                    }
-                }
-            }
-            
-            fetchedStories.push({
-                id: storyDoc.id,
-                ...storyData,
-                userAvatar: storyUser.avatar,
-                userName: storyUser.name,
-            } as Story);
-        });
+        // Populate from current user and contacts first
+        if (user) {
+            usersData[user.uid] = { id: user.uid, name: user.displayName || "You", avatar: user.photoURL || '', email: user.email || '', online: true };
+        }
+        contacts.forEach(c => { usersData[c.id] = c; });
 
-        await Promise.all(userPromises);
+        // Fetch any missing user profiles
+        const missingUserIds = userIds.filter(id => !usersData[id]);
+        if (missingUserIds.length > 0) {
+            const usersRef = collection(db, 'users');
+            const missingUsersQuery = query(usersRef, where('id', 'in', missingUserIds));
+            const missingUsersSnapshot = await getDocs(missingUsersQuery);
+            missingUsersSnapshot.forEach(doc => {
+                const userData = doc.data();
+                usersData[doc.id] = { id: doc.id, name: userData.name, avatar: userData.avatar, email: userData.email, online: userData.online };
+            });
+        }
+        
+        const fetchedStories: Story[] = storiesData.map(story => {
+            const author = usersData[story.userId] || { name: 'Unknown', avatar: '' };
+            return {
+                ...story,
+                userName: author.name,
+                userAvatar: author.avatar
+            } as Story;
+        }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-        // Sort stories by creation date
-        fetchedStories.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setStories(fetchedStories);
     });
 
     return () => unsubscribeStories();
   }, [user, contacts]);
 
-
-   useEffect(() => {
-    if (selectedContact) {
-      sessionStorage.setItem('selectedContactId', selectedContact.id);
-    }
-   }, [selectedContact]);
 
   useEffect(() => {
     if (user && selectedContact) {
@@ -243,6 +243,8 @@ export default function ChatPage() {
         setMessages(msgs);
       });
       return () => unsubscribe();
+    } else {
+      setMessages([]);
     }
   }, [user, selectedContact]);
 
@@ -301,7 +303,6 @@ export default function ChatPage() {
     const file = e.target.files[0];
     await handleFileUpload(file);
 
-    // Reset file input
     if(fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -387,25 +388,23 @@ export default function ChatPage() {
       const contactUser = querySnapshot.docs[0].data() as ChatUser;
       const contactId = contactUser.id;
 
-      // Add to current user's contacts
       const contactDocRef = doc(db, "users", user.uid, "contacts", contactId);
       const contactDoc = await getDoc(contactDocRef);
 
       if (contactDoc.exists()) {
-          toast({ title: "Already a contact", description: `${contactUser.name} is already in your contacts.` });
+          toast({ title: "Already a contact", description: `${contactUser.name || contactUser.email} is already in your contacts.` });
           return;
       }
       
       const batch = writeBatch(db);
       batch.set(contactDocRef, { addedAt: serverTimestamp() });
       
-      // Also add current user to the new contact's list to make it reciprocal
       const currentUserContactDocRef = doc(db, "users", contactId, "contacts", user.uid);
       batch.set(currentUserContactDocRef, { addedAt: serverTimestamp() });
 
       await batch.commit();
 
-      toast({ title: "Contact Added", description: `You and ${contactUser.name} are now contacts.` });
+      toast({ title: "Contact Added", description: `You and ${contactUser.name || contactUser.email} are now contacts.` });
       setIsAddContactOpen(false);
   };
   
@@ -422,7 +421,6 @@ export default function ChatPage() {
         mediaRecorderRef.current.onstop = async () => {
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
             await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
-            // Clean up stream tracks
             stream.getTracks().forEach(track => track.stop());
         };
 
@@ -538,7 +536,7 @@ export default function ChatPage() {
                         {contacts.map((contact) => (
                         <SidebarMenuItem key={contact.id}>
                             <SidebarMenuButton
-                            onClick={() => setSelectedContact(contact)}
+                            onClick={() => selectContact(contact)}
                             isActive={selectedContact?.id === contact.id}
                             className="justify-start w-full"
                             >
@@ -697,3 +695,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
