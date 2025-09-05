@@ -194,7 +194,7 @@ export default function ChatPage() {
         const missingUserIds = authorIds.filter(id => !usersData[id]);
         if (missingUserIds.length > 0) {
             const usersRef = collection(db, 'users');
-            const missingUsersQuery = query(usersRef, where('id', 'in', missingUserIds));
+            const missingUsersQuery = query(usersRef, where('__name__', 'in', missingUserIds));
             const missingUsersSnapshot = await getDocs(missingUsersQuery);
             missingUsersSnapshot.forEach(doc => {
                 const userData = doc.data();
@@ -439,20 +439,26 @@ export default function ChatPage() {
    const handleAudioAction = async (message: Message) => {
         if (!audioRef.current) return;
 
-        const isCurrentlyPlaying = playingAudioId === message.id && isAudioPlaying;
+        const isCurrentlyPlayingThisMessage = playingAudioId === message.id && isAudioPlaying;
 
-        if (isCurrentlyPlaying) {
+        if (isCurrentlyPlayingThisMessage) {
             audioRef.current.pause();
             setIsAudioPlaying(false);
             setPlayingAudioId(null);
         } else {
+            // Stop any currently playing audio
             if (audioRef.current.src && !audioRef.current.paused) {
                 audioRef.current.pause();
             }
             
             let audioUrl: string | undefined;
 
-            if (message.type === 'text' && message.text) {
+            // Case 1: Message is of type 'audio' (a recorded message)
+            if (message.type === 'audio' && message.url) {
+                audioUrl = message.url;
+            } 
+            // Case 2: Message is of type 'text' and we need to generate TTS
+            else if (message.type === 'text' && message.text) {
                 setPlayingAudioId(message.id); 
                 setIsAudioPlaying(false); // Show loading state for TTS
                 try {
@@ -468,8 +474,6 @@ export default function ChatPage() {
                     setPlayingAudioId(null);
                     return;
                 }
-            } else if (message.type === 'audio' && message.url) {
-                audioUrl = message.url;
             }
 
             if (audioUrl) {
@@ -619,13 +623,7 @@ export default function ChatPage() {
 
                            return (
                                <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   {isMyMessage && message.type === 'text' && (
-                                       <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
-                                           {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
-                                            isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                            <Volume2 className="w-4 h-4" />}
-                                       </Button>
-                                   )}
+                                   
                                    <div className={`rounded-lg px-4 py-2 max-w-sm ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                                        {message.type === 'text' && <p>{message.text}</p>}
                                        {message.type === 'image' && message.url && (
@@ -649,7 +647,7 @@ export default function ChatPage() {
                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                        </p>
                                    </div>
-                                   {!isMyMessage && message.type === 'text' && (
+                                   {message.type === 'text' && (
                                        <Button size="icon" variant="ghost" className="w-8 h-8" onClick={() => handleAudioAction(message)} disabled={!isOnline}>
                                           {isAudioMessagePlaying ? <Pause className="w-4 h-4" /> :
                                            isAudioMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
