@@ -26,7 +26,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc, setDoc } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
@@ -35,6 +35,7 @@ import { StoryViewer } from "./story-viewer";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatDistanceToNow } from "date-fns";
+import { Badge } from "./ui/badge";
 
 
 interface ChatUser {
@@ -43,6 +44,7 @@ interface ChatUser {
   avatar: string;
   online: boolean;
   email: string;
+  unreadCount?: number;
 }
 
 interface Message {
@@ -103,6 +105,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOnline = useOnlineStatus();
+  const unreadListenersRef = useRef<Map<string, () => void>>(new Map());
 
 
   useEffect(() => {
@@ -125,14 +128,22 @@ export default function ChatPage() {
   }, [router]);
 
 
-  const selectContact = useCallback((contact: ChatUser | null) => {
+  const selectContact = useCallback(async (contact: ChatUser | null) => {
     setSelectedContact(contact);
-    if (contact) {
-      sessionStorage.setItem('selectedContactId', contact.id);
+    if (contact && user) {
+        sessionStorage.setItem('selectedContactId', contact.id);
+        
+        const chatId = [user.uid, contact.id].sort().join("_");
+        const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
+        try {
+            await setDoc(chatMemberRef, { lastRead: serverTimestamp() }, { merge: true });
+        } catch (error) {
+            console.error("Error updating lastRead timestamp:", error);
+        }
     } else {
-      sessionStorage.removeItem('selectedContactId');
+        sessionStorage.removeItem('selectedContactId');
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -142,6 +153,10 @@ export default function ChatPage() {
       contactsCollection,
       async (snapshot) => {
         const contactIds = snapshot.docs.map((doc) => doc.id);
+        
+        // Clean up old listeners
+        unreadListenersRef.current.forEach(unsubscribe => unsubscribe());
+        unreadListenersRef.current.clear();
   
         if (contactIds.length > 0) {
           const usersCollection = collection(db, 'users');
@@ -150,9 +165,34 @@ export default function ChatPage() {
           const unsubscribeUsers = onSnapshot(contactsQuery, (querySnapshot) => {
             const fetchedContacts: ChatUser[] = [];
             querySnapshot.forEach(doc => {
-              fetchedContacts.push({id: doc.id, ...doc.data()} as ChatUser)
+              fetchedContacts.push({id: doc.id, ...doc.data(), unreadCount: 0 } as ChatUser)
             });
             setContacts(fetchedContacts);
+
+            fetchedContacts.forEach(contact => {
+                const chatId = [user.uid, contact.id].sort().join('_');
+                const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
+                
+                const unsubscribeLastRead = onSnapshot(chatMemberRef, (memberDoc) => {
+                    const lastReadTimestamp = memberDoc.data()?.lastRead || null;
+                    const messagesQuery = query(
+                        collection(db, 'chats', chatId, 'messages'),
+                        where('senderId', '==', contact.id),
+                        ...(lastReadTimestamp ? [where('timestamp', '>', lastReadTimestamp)] : [])
+                    );
+                    
+                    const unsubscribeMessages = onSnapshot(messagesQuery, (messageSnapshot) => {
+                        const unreadCount = messageSnapshot.size;
+                        setContacts(prevContacts => prevContacts.map(c => 
+                            c.id === contact.id ? { ...c, unreadCount } : c
+                        ));
+                    });
+                    
+                    // Store this listener to unsubscribe later
+                    unreadListenersRef.current.set(`msg_${contact.id}`, unsubscribeMessages);
+                });
+                unreadListenersRef.current.set(`lastRead_${contact.id}`, unsubscribeLastRead);
+            });
 
             if (selectedContact) {
               const updatedSelectedContact = fetchedContacts.find(c => c.id === selectedContact.id);
@@ -176,7 +216,11 @@ export default function ChatPage() {
       }
     );
   
-    return () => unsubscribeContacts();
+    return () => {
+        unsubscribeContacts();
+        unreadListenersRef.current.forEach(unsubscribe => unsubscribe());
+        unreadListenersRef.current.clear();
+    };
   }, [user, selectContact]);
 
 
@@ -650,7 +694,10 @@ export default function ChatPage() {
                                 <AvatarImage src={contact.avatar} alt={contact.name} />
                                 <AvatarFallback>{contact.name?.charAt(0) || contact.email?.charAt(0)}</AvatarFallback>
                             </Avatar>
-                            <span>{contact.name || contact.email}</span>
+                            <span className="flex-1 truncate">{contact.name || contact.email}</span>
+                             {contact.unreadCount && contact.unreadCount > 0 && (
+                                <Badge className="h-5">{contact.unreadCount}</Badge>
+                            )}
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                         ))}
@@ -800,3 +847,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
