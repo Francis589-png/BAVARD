@@ -4,9 +4,11 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { Heart, MessageCircle, Share2, Play, Pause } from "lucide-react";
 import { Button } from "./ui/button";
+import { db } from "@/lib/firebase";
+import { useToast } from "@/hooks/use-toast";
 
 export interface FeedPostProps {
     id: string;
@@ -14,15 +16,29 @@ export interface FeedPostProps {
     mediaType: 'image' | 'video';
     description: string;
     user: {
+        id: string;
         name: string;
         avatar: string;
     };
+    likes: string[];
     createdAt: Timestamp;
+    currentUserId: string | null;
+    onCommentClick: () => void;
 }
 
-export default function FeedPost({ mediaUrl, mediaType, description, user }: FeedPostProps) {
+export default function FeedPost({ id, mediaUrl, mediaType, description, user, likes, currentUserId, onCommentClick }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const { toast } = useToast();
+
+    const [isLiked, setIsLiked] = useState(currentUserId ? likes.includes(currentUserId) : false);
+    const [likeCount, setLikeCount] = useState(likes.length);
+
+    useEffect(() => {
+      setIsLiked(currentUserId ? likes.includes(currentUserId) : false);
+      setLikeCount(likes.length);
+    }, [likes, currentUserId]);
+
 
     const togglePlay = () => {
         if (mediaType !== 'video' || !videoRef.current) return;
@@ -35,6 +51,41 @@ export default function FeedPost({ mediaUrl, mediaType, description, user }: Fee
             setIsPlaying(false);
         }
     };
+    
+    const handleLike = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!currentUserId) {
+            toast({ title: "Please log in", description: "You need to be logged in to like a post." });
+            return;
+        }
+
+        const postRef = doc(db, "posts", id);
+        try {
+            if (isLiked) {
+                await updateDoc(postRef, {
+                    likes: arrayRemove(currentUserId)
+                });
+                setLikeCount(prev => prev - 1);
+                setIsLiked(false);
+            } else {
+                await updateDoc(postRef, {
+                    likes: arrayUnion(currentUserId)
+                });
+                setLikeCount(prev => prev + 1);
+                setIsLiked(true);
+            }
+        } catch (error) {
+            console.error("Error updating like:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not update like. Please try again." });
+        }
+    };
+    
+    const handleShare = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const postUrl = `${window.location.origin}/post/${id}`;
+        navigator.clipboard.writeText(postUrl);
+        toast({ title: "Link Copied!", description: "A link to this post has been copied to your clipboard." });
+    };
 
     useEffect(() => {
         const videoElement = videoRef.current;
@@ -43,18 +94,14 @@ export default function FeedPost({ mediaUrl, mediaType, description, user }: Fee
         const observer = new IntersectionObserver(
             ([entry]) => {
                 if (entry.isIntersecting) {
-                    videoElement.play().catch(() => {
-                        setIsPlaying(false);
-                    });
+                    videoElement.play().catch(() => setIsPlaying(false));
                     setIsPlaying(true);
                 } else {
                     videoElement.pause();
                     setIsPlaying(false);
                 }
             },
-            {
-                threshold: 0.5,
-            }
+            { threshold: 0.5 }
         );
 
         observer.observe(videoElement);
@@ -98,20 +145,22 @@ export default function FeedPost({ mediaUrl, mediaType, description, user }: Fee
                         <div className="flex items-center gap-2">
                              <Avatar className="h-10 w-10 border-2 border-white">
                                 <AvatarImage src={user.avatar} />
-                                <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                                <AvatarFallback>{user.name?.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <p className="font-bold text-white">{user.name}</p>
                         </div>
                         <p className="text-white mt-2 text-sm">{description}</p>
                     </div>
-                    <div className="flex flex-col items-center gap-4 text-white">
-                        <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full">
-                            <Heart className="w-7 h-7" />
+                    <div className="flex flex-col items-center gap-2 text-white">
+                        <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full flex flex-col h-auto p-2" onClick={handleLike}>
+                            <Heart className={`w-7 h-7 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                            <span className="text-xs font-bold">{likeCount}</span>
                         </Button>
-                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full">
+                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full flex flex-col h-auto p-2" onClick={(e) => { e.stopPropagation(); onCommentClick(); }}>
                             <MessageCircle className="w-7 h-7" />
+                            <span className="text-xs font-bold">...</span>
                         </Button>
-                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full">
+                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={handleShare}>
                             <Share2 className="w-7 h-7" />
                         </Button>
                     </div>
@@ -120,3 +169,4 @@ export default function FeedPost({ mediaUrl, mediaType, description, user }: Fee
         </div>
     );
 }
+
