@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Search } from "lucide-react";
-import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp, getDocsFromCache, collectionGroup } from "firebase/firestore";
 import FeedPost, { FeedPostProps } from "./feed-post";
 import Link from "next/link";
 import { CommentSheet } from "./comment-sheet";
@@ -57,42 +57,56 @@ export default function ForYouPage() {
   useEffect(() => {
     if (!user) return;
 
-    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const fetchPosts = async () => {
+        setLoading(true);
 
-    const unsubscribePosts = onSnapshot(postsQuery, async (snapshot) => {
-      const postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as (Omit<Post, 'user'> & {userId: string})[];
+        const contactsRef = collection(db, "users", user.uid, "contacts");
+        const contactsSnapshot = await getDocs(contactsRef);
+        const contactIds = contactsSnapshot.docs.map(doc => doc.id);
 
-      const authorIds = Array.from(new Set(postsData.map(p => p.userId)));
-      const usersData: Record<string, ChatUser> = {};
+        const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+        const postsSnapshot = await getDocs(postsQuery);
+        
+        const postsData = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as (Omit<Post, 'user'> & {userId: string})[];
+        
+        const authorIds = Array.from(new Set(postsData.map(p => p.userId)));
+        const usersData: Record<string, ChatUser> = {};
 
-      if (authorIds.length > 0) {
-        const usersRef = collection(db, 'users');
-        // Firestore 'in' query is limited to 10 elements. If you expect more authors, you'll need to chunk this.
-        const usersQuery = query(usersRef, where('__name__', 'in', authorIds.slice(0, 10)));
-        const usersSnapshot = await getDocs(usersQuery);
-        usersSnapshot.forEach(doc => {
-            const data = doc.data();
-            usersData[doc.id] = { id: doc.id, name: data.name, avatar: data.avatar, email: data.email };
-        });
-      }
+        if (authorIds.length > 0) {
+            const usersRef = collection(db, 'users');
+            const usersQuery = query(usersRef, where('__name__', 'in', authorIds.slice(0, 10)));
+            const usersSnapshot = await getDocs(usersQuery);
+            usersSnapshot.forEach(doc => {
+                const data = doc.data();
+                usersData[doc.id] = { id: doc.id, name: data.name, avatar: data.avatar, email: data.email };
+            });
+        }
       
-      const fetchedPosts: Post[] = postsData.map(post => {
-        const author = usersData[post.userId] || { id: post.userId, name: 'Unknown', avatar: '', email: '' };
-        return {
-          ...post,
-          user: {
-            id: author.id,
-            name: author.name || 'Unknown User',
-            avatar: author.avatar || ''
-          },
-        };
-      }).filter(p => p.user.name !== 'Unknown'); // Filter out posts where author couldn't be fetched
+        const fetchedPosts: Post[] = postsData.map(post => {
+            const author = usersData[post.userId] || { id: post.userId, name: 'Unknown', avatar: '', email: '' };
+            return {
+                ...post,
+                user: { id: author.id, name: author.name || 'Unknown User', avatar: author.avatar || '' },
+            };
+        }).filter(p => p.user.name !== 'Unknown');
 
-      setPosts(fetchedPosts);
-      setLoading(false);
-    });
+        // Algorithm:
+        // 1. Separate posts from contacts and others
+        const contactPosts = fetchedPosts.filter(p => contactIds.includes(p.userId));
+        const otherPosts = fetchedPosts.filter(p => !contactIds.includes(p.userId));
 
-    return () => unsubscribePosts();
+        // 2. Sort other posts by like count (virality)
+        otherPosts.sort((a, b) => b.likes.length - a.likes.length);
+
+        // 3. Combine them: contact posts first, then popular posts
+        const sortedPosts = [...contactPosts, ...otherPosts];
+
+        setPosts(sortedPosts);
+        setLoading(false);
+    };
+
+    fetchPosts();
+
   }, [user]);
 
   useEffect(() => {
