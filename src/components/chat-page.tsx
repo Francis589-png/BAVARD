@@ -275,6 +275,18 @@ export default function ChatPage() {
     const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
         const newNotifications: Notification[] = [];
         let foundUnread = false;
+
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+                const newNotif = change.doc.data() as Notification;
+                 if (!newNotif.read) {
+                    if (notificationSoundRef.current) {
+                        notificationSoundRef.current.play().catch(e => console.error("Error playing sound", e));
+                    }
+                 }
+            }
+        });
+
         snapshot.forEach(doc => {
             const data = doc.data() as Notification;
             newNotifications.push({ id: doc.id, ...data });
@@ -283,19 +295,12 @@ export default function ChatPage() {
             }
         });
 
-        // Play sound only if there's a new unread notification
-        // that wasn't there before
-        const hasNewUnread = newNotifications.some(n => !n.read && !notifications.find(o => o.id === n.id));
-        if (hasNewUnread && notificationSoundRef.current) {
-            notificationSoundRef.current.play().catch(e => console.error("Error playing sound", e));
-        }
-
         setNotifications(newNotifications);
         setHasUnread(foundUnread);
     });
 
     return () => unsubscribe();
-  }, [user, notifications]);
+  }, [user]);
 
   const handleSignOut = async () => {
     try {
@@ -317,7 +322,7 @@ export default function ChatPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() === "" || !user || !selectedContact) return;
+    if (newMessage.trim() === "" || !user || !selectedContact || !isOnline) return;
 
     const chatId = [user.uid, selectedContact.id].sort().join("_");
     const messagesCollection = collection(db, "chats", chatId, "messages");
@@ -364,7 +369,7 @@ export default function ChatPage() {
   };
   
   const handleFileUpload = async (file: Blob, fileName?: string) => {
-    if (!user || !selectedContact) return;
+    if (!user || !selectedContact || !isOnline) return;
     
     setUploading(true);
     const resolvedFileName = fileName || (file instanceof File ? file.name : `audio-message-${Date.now()}.webm`);
@@ -499,7 +504,7 @@ export default function ChatPage() {
       const contactId = contactUser.id;
 
       const contactDocRef = doc(db, "users", user.uid, "contacts", contactId);
-      const contactDoc = await getDoc(contactDocRef);
+      const contactDoc = await getDoc(contactDoc);
 
       if (contactDoc.exists()) {
           toast({ title: "Already a contact", description: `${contactUser.name || contactUser.email} is already in your contacts.` });
@@ -789,3 +794,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
