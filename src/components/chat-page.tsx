@@ -674,7 +674,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
-
-    

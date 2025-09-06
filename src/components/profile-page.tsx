@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -6,35 +7,112 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Camera, Share2 } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc, collection, query, where, getDocs, writeBatch, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 
-export default function ProfilePage() {
-    const [user, setUser] = useState<User | null>(null);
+interface ProfileUser {
+    id: string;
+    name: string;
+    email: string;
+    avatar: string;
+}
+
+interface Post {
+    id: string;
+    mediaUrl: string;
+    mediaType: 'image' | 'video';
+    title: string;
+}
+
+export default function ProfilePage({ userId }: { userId: string }) {
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
+    const [isMyProfile, setIsMyProfile] = useState(false);
+    
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [contactCount, setContactCount] = useState(0);
+    const [isContact, setIsContact] = useState(false);
+
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [imageFile, setImageFile] = useState<File | null>(null);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
     const { toast } = useToast();
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            if (currentUser) {
-                setUser(currentUser);
-            } else {
-                router.push("/login");
-            }
-            setLoading(false);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCurrentUser(user);
         });
         return () => unsubscribe();
-    }, [router]);
+    }, []);
+
+    useEffect(() => {
+        if (!userId) {
+            setLoading(false);
+            return;
+        };
+
+        const fetchProfileData = async () => {
+            setLoading(true);
+            try {
+                // Fetch user data
+                const userDocRef = doc(db, 'users', userId);
+                const userDoc = await getDoc(userDocRef);
+                if (userDoc.exists()) {
+                    setProfileUser(userDoc.data() as ProfileUser);
+                } else {
+                    toast({ variant: 'destructive', title: 'User not found' });
+                }
+
+                // Fetch user's posts
+                const postsQuery = query(collection(db, 'posts'), where('userId', '==', userId));
+                const postsSnapshot = await getDocs(postsQuery);
+                const userPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+                setPosts(userPosts);
+
+            } catch (error) {
+                console.error("Error fetching profile data: ", error);
+                toast({ variant: 'destructive', title: 'Error', description: 'Could not load profile.' });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchProfileData();
+
+    }, [userId, toast]);
+    
+     useEffect(() => {
+        if (currentUser && userId) {
+            setIsMyProfile(currentUser.uid === userId);
+
+            // Fetch contact count
+            const contactsRef = collection(db, "users", userId, "contacts");
+            const unsubscribeCount = onSnapshot(contactsRef, (snapshot) => {
+                setContactCount(snapshot.size);
+            });
+            
+            // Check if profile user is a contact
+            const contactDocRef = doc(db, "users", currentUser.uid, "contacts", userId);
+            const unsubscribeIsContact = onSnapshot(contactDocRef, (doc) => {
+                setIsContact(doc.exists());
+            });
+
+            return () => {
+                unsubscribeCount();
+                unsubscribeIsContact();
+            };
+        }
+    }, [currentUser, userId]);
+
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -47,74 +125,69 @@ export default function ProfilePage() {
             reader.readAsDataURL(file);
         }
     };
-    
-    const fileToDataUri = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    };
 
     const handleUpdateProfilePicture = async () => {
-        if (!imageFile || !user) {
-            toast({
-                variant: "destructive",
-                title: "No Image Selected",
-                description: "Please select an image to upload.",
-            });
-            return;
-        }
-
+        if (!imageFile || !currentUser) return;
         setUploading(true);
 
+        const reader = new FileReader();
+        reader.readAsDataURL(imageFile);
+        reader.onload = async () => {
+            const dataUri = reader.result as string;
+            try {
+                const ipfsHash = await uploadFile({ dataUri, fileName: imageFile.name });
+                const newAvatarUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+
+                await updateProfile(currentUser, { photoURL: newAvatarUrl });
+                const userDocRef = doc(db, 'users', currentUser.uid);
+                await updateDoc(userDocRef, { avatar: newAvatarUrl });
+
+                toast({ title: "Profile Updated!", description: "Your new profile picture is now set." });
+                setProfileUser(prev => prev ? { ...prev, avatar: newAvatarUrl } : null);
+                setImageFile(null);
+                setImagePreview(null);
+            } catch (error) {
+                console.error('Profile update error:', error);
+                toast({ variant: 'destructive', title: 'Update Error', description: 'Failed to update profile picture.' });
+            } finally {
+                setUploading(false);
+            }
+        };
+    };
+
+    const handleShareInvite = () => {
+        if (!profileUser) return;
+        const inviteLink = `${window.location.origin}/add-contact?userId=${profileUser.id}`;
+        navigator.clipboard.writeText(inviteLink);
+        toast({ title: "Link Copied!", description: `Invitation link for ${profileUser.name} copied!` });
+    };
+
+    const handleAddContact = async () => {
+        if (!currentUser || !profileUser || isMyProfile) return;
+        const batch = writeBatch(db);
+        const currentUserContactRef = doc(db, "users", currentUser.uid, "contacts", profileUser.id);
+        batch.set(currentUserContactRef, { addedAt: serverTimestamp() });
+        const profileUserContactRef = doc(db, "users", profileUser.id, "contacts", currentUser.uid);
+        batch.set(profileUserContactRef, { addedAt: serverTimestamp() });
+
         try {
-            const dataUri = await fileToDataUri(imageFile);
-            const ipfsHash = await uploadFile({ dataUri, fileName: imageFile.name });
-            const newAvatarUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
-
-            // Update Firebase Auth profile
-            await updateProfile(user, { photoURL: newAvatarUrl });
-
-            // Update Firestore user document
-            const userDocRef = doc(db, 'users', user.uid);
-            await updateDoc(userDocRef, { avatar: newAvatarUrl });
-
-            toast({
-                title: "Profile Updated!",
-                description: "Your new profile picture is now set.",
-            });
-            
-            // Force a reload of the user object to reflect changes
-            await user.reload();
-            setUser(auth.currentUser); 
-            setImageFile(null);
-            setImagePreview(null);
-
+            await batch.commit();
+            toast({title: "Contact Added", description: `You and ${profileUser.name} are now contacts.`});
         } catch (error) {
-            console.error('Profile update error:', error);
-            toast({
-                variant: 'destructive',
-                title: 'Update Error',
-                description: 'Failed to update your profile picture.',
-            });
-        } finally {
-            setUploading(false);
+            console.error("Error adding contact:", error);
+            toast({variant: "destructive", title: "Error", description: "Could not add contact."});
         }
     };
     
-    const handleShareInvite = () => {
-        if (!user) return;
-        const inviteLink = `${window.location.origin}/add-contact?userId=${user.uid}`;
-        navigator.clipboard.writeText(inviteLink);
-        toast({
-            title: "Link Copied!",
-            description: "Your invitation link has been copied to the clipboard.",
-        });
+    const handleChat = () => {
+        if (!profileUser) return;
+        // This is a simple redirect, assumes contact already exists for chat
+        router.push('/chat');
+        // A more robust implementation might set the selected contact in a global state
+        sessionStorage.setItem('selectedContactId', profileUser.id);
     };
 
-    if (loading || !user) {
+    if (loading || !profileUser) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -123,76 +196,100 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-secondary p-4">
-             <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-4 left-4"
-                onClick={() => router.push('/chat')}
-            >
-                <ArrowLeft />
-            </Button>
-            <Card className="w-full max-w-md">
-                <CardHeader className="items-center text-center">
-                    <div className="relative">
-                        <Avatar className="w-32 h-32 text-4xl">
-                            <AvatarImage src={imagePreview || user.photoURL || undefined} alt={user.displayName || user.email || 'User'} />
-                            <AvatarFallback>{user.displayName?.charAt(0) || user.email?.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <Button size="icon" className="absolute bottom-1 right-1 rounded-full" onClick={() => fileInputRef.current?.click()}>
-                           <Camera className="w-5 h-5"/>
-                           <span className="sr-only">Change picture</span>
-                        </Button>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            className="hidden"
-                            accept="image/*"
-                        />
-                    </div>
+        <div className="flex flex-col min-h-screen bg-background">
+            <header className="sticky top-0 z-10 flex items-center gap-4 border-b bg-background p-4">
+                <Button variant="ghost" size="icon" onClick={() => router.back()}>
+                    <ArrowLeft />
+                </Button>
+                <h1 className="text-xl font-bold">{profileUser.name}</h1>
+            </header>
 
-                    <CardTitle className="pt-4">{user.displayName || "Anonymous"}</CardTitle>
-                    <CardDescription>
-                        {user.email}
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                   {imagePreview && (
-                     <div className="p-4 border rounded-md">
-                         <h3 className="font-medium mb-2 text-center">New Picture Preview</h3>
-                         <Image src={imagePreview} alt="New profile preview" width={400} height={400} objectFit="cover" className="rounded-md aspect-square mx-auto" />
-                     </div>
-                   )}
-                </CardContent>
-                <CardFooter className="flex-col gap-4">
-                    {imageFile && (
-                        <Button
-                            className="w-full"
-                            onClick={handleUpdateProfilePicture}
-                            disabled={uploading}
-                        >
-                            {uploading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Upload className="mr-2 h-4 w-4" />
+            <main className="flex-1 overflow-y-auto">
+                <div className="p-4 md:p-6">
+                    <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
+                        <div className="relative">
+                            <Avatar className="w-32 h-32 text-4xl border-4 border-background ring-2 ring-primary">
+                                <AvatarImage src={imagePreview || profileUser.avatar} alt={profileUser.name} />
+                                <AvatarFallback>{profileUser.name?.charAt(0) || '?'}</AvatarFallback>
+                            </Avatar>
+                            {isMyProfile && (
+                                <>
+                                <Button size="icon" className="absolute bottom-1 right-1 rounded-full" onClick={() => fileInputRef.current?.click()}>
+                                <Camera className="w-5 h-5"/>
+                                <span className="sr-only">Change picture</span>
+                                </Button>
+                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                                </>
                             )}
-                            {uploading ? "Saving..." : "Save New Picture"}
-                        </Button>
-                    )}
+                        </div>
+                        <div className="flex-1 text-center md:text-left">
+                            <CardTitle className="text-3xl">{profileUser.name}</CardTitle>
+                            <CardDescription>{profileUser.email}</CardDescription>
+                            <div className="flex justify-center md:justify-start gap-4 mt-4">
+                                <div>
+                                    <p className="font-bold text-lg">{posts.length}</p>
+                                    <p className="text-sm text-muted-foreground">Posts</p>
+                                </div>
+                                <div>
+                                    <p className="font-bold text-lg">{contactCount}</p>
+                                    <p className="text-sm text-muted-foreground">Contacts</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <Separator />
+                    <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+                         {isMyProfile ? (
+                            <>
+                            {imageFile && (
+                                <Button className="w-full sm:w-auto" onClick={handleUpdateProfilePicture} disabled={uploading}>
+                                    {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                    Save Picture
+                                </Button>
+                            )}
+                            <Button className="w-full sm:w-auto" variant="outline" onClick={handleShareInvite}>
+                                <Share2 className="mr-2 h-4 w-4" />
+                                Share Invite Link
+                            </Button>
+                            </>
+                         ) : (
+                           <>
+                            {isContact ? (
+                                <Button className="w-full sm:w-auto" onClick={handleChat}>
+                                    <MessageCircle className="mr-2 h-4 w-4" /> Message
+                                </Button>
+                            ) : (
+                                <Button className="w-full sm:w-auto" onClick={handleAddContact}>
+                                    <UserPlus className="mr-2 h-4 w-4" /> Add Contact
+                                </Button>
+                            )}
+                           </>
+                         )}
+                    </div>
+                </div>
 
-                    <Button
-                        className="w-full"
-                        variant="outline"
-                        onClick={handleShareInvite}
-                    >
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Share Invite Link
-                    </Button>
-                </CardFooter>
-            </Card>
+                <Separator className="my-6" />
+
+                <div className="p-4 md:p-6">
+                    <h2 className="text-xl font-bold mb-4">Posts</h2>
+                    {posts.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-1">
+                            {posts.map(post => (
+                                <div key={post.id} className="relative aspect-square w-full bg-muted overflow-hidden rounded-md">
+                                    <Image src={post.mediaUrl} alt={post.title || ''} layout="fill" objectFit="cover" />
+                                     {post.mediaType === 'video' && (
+                                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                            <Play className="h-8 w-8 text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-muted-foreground text-center py-8">{isMyProfile ? "You haven't" : `${profileUser.name} hasn't`} posted anything yet.</p>
+                    )}
+                </div>
+            </main>
         </div>
     );
 }
