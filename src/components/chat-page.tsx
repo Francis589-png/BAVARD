@@ -287,7 +287,7 @@ export default function ChatPage() {
             }
         });
 
-        snapshot.forEach(doc => {
+        snapshot.docs.forEach(doc => {
             const data = doc.data() as Notification;
             newNotifications.push({ id: doc.id, ...data });
             if (!data.read) {
