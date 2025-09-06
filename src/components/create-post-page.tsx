@@ -7,21 +7,22 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Image as ImageIcon, Video } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Image as ImageIcon, Video, Film, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
 import { Textarea } from "./ui/textarea";
 
-export default function CreateStoryPage() {
+export default function CreatePostPage() {
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [uploadTarget, setUploadTarget] = useState<'story' | 'video' | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [description, setDescription] = useState("");
-    const [uploadType, setUploadType] = useState<'image' | 'video' | null>(null);
+    const [fileType, setFileType] = useState<'image' | 'video' | null>(null);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
@@ -44,13 +45,15 @@ export default function CreateStoryPage() {
         if (selectedFile) {
             setFile(selectedFile);
             
-            const fileType = selectedFile.type.split('/')[0];
-            if(fileType === 'image') {
-                setUploadType('image');
-            } else if (fileType === 'video') {
-                setUploadType('video');
+            const detectedFileType = selectedFile.type.split('/')[0];
+            if(detectedFileType === 'image') {
+                setFileType('image');
+            } else if (detectedFileType === 'video') {
+                setFileType('video');
             } else {
                 toast({ variant: 'destructive', title: 'Unsupported File', description: 'Please select an image or video file.'});
+                setFileType(null);
+                setFile(null);
                 return;
             }
 
@@ -62,17 +65,21 @@ export default function CreateStoryPage() {
         }
     };
 
-    const handleUpload = async () => {
-        if (!file || !user || !uploadType) {
-            toast({
-                variant: "destructive",
-                title: "No File Selected",
-                description: "Please select a file to upload.",
-            });
+    const handleUpload = async (target: 'story' | 'video') => {
+        if (!file || !user || !fileType) return;
+        
+        if (target === 'story' && fileType !== 'image') {
+            toast({ variant: 'destructive', title: 'Invalid File', description: 'Stories only support images.'});
+            return;
+        }
+
+        if (target === 'video' && fileType !== 'video') {
+            toast({ variant: 'destructive', title: 'Invalid File', description: 'The feed only supports videos.'});
             return;
         }
 
         setUploading(true);
+        setUploadTarget(target);
 
         try {
             const reader = new FileReader();
@@ -83,8 +90,7 @@ export default function CreateStoryPage() {
                     const ipfsHash = await uploadFile({ dataUri, fileName: file.name });
                     const mediaUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
 
-                    if (uploadType === 'video') {
-                        // Logic to upload a video post
+                    if (target === 'video') {
                         const videosCollection = collection(db, 'videos');
                         await addDoc(videosCollection, {
                             userId: user.uid,
@@ -108,7 +114,7 @@ export default function CreateStoryPage() {
                             createdAt: serverTimestamp(),
                             expiresAt: expiresAt,
                         });
-                        toast({ title: "Story Uploaded!", description: "Your new story is now live." });
+                        toast({ title: "Story Posted!", description: "Your new story is now live for 24 hours." });
                         router.push("/chat");
                     }
 
@@ -117,12 +123,14 @@ export default function CreateStoryPage() {
                     toast({ variant: 'destructive', title: 'Upload Error', description: 'Failed to upload your file.' });
                 } finally {
                     setUploading(false);
+                    setUploadTarget(null);
                 }
             };
         } catch (error) {
             console.error('File processing error:', error);
             toast({ variant: 'destructive', title: 'Error', description: 'An error occurred while processing the file.'});
             setUploading(false);
+            setUploadTarget(null);
         }
     };
 
@@ -143,7 +151,7 @@ export default function CreateStoryPage() {
                 <CardHeader>
                     <CardTitle>Create a New Post</CardTitle>
                     <CardDescription>
-                        Upload an image for your story or a video for the feed.
+                        Select an image for a temporary story or a video for the permanent feed.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -153,8 +161,8 @@ export default function CreateStoryPage() {
                     >
                         {preview ? (
                             <>
-                                {uploadType === 'image' && <Image src={preview} alt="Preview" layout="fill" objectFit="cover" className="rounded-md" />}
-                                {uploadType === 'video' && <video src={preview} muted loop autoPlay className="w-full h-full object-cover rounded-md" />}
+                                {fileType === 'image' && <Image src={preview} alt="Preview" layout="fill" objectFit="cover" className="rounded-md" />}
+                                {fileType === 'video' && <video src={preview} muted loop autoPlay className="w-full h-full object-cover rounded-md" />}
                             </>
                         ) : (
                             <div className="text-center text-muted-foreground">
@@ -170,27 +178,41 @@ export default function CreateStoryPage() {
                             accept="image/*,video/*"
                         />
                     </div>
-                    {uploadType === 'video' && (
+                    {fileType === 'video' && (
                         <Textarea 
                             placeholder="Add a description for your video..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             className="resize-none"
+                            disabled={uploading}
                         />
                     )}
                 </CardContent>
-                <CardFooter>
-                    <Button
+                <CardFooter className="flex flex-col gap-3">
+                     <Button
                         className="w-full"
-                        onClick={handleUpload}
-                        disabled={!file || uploading}
+                        onClick={() => handleUpload('story')}
+                        disabled={!file || fileType !== 'image' || uploading}
+                        variant="outline"
                     >
-                        {uploading ? (
+                        {uploading && uploadTarget === 'story' ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
-                            <Upload className="mr-2 h-4 w-4" />
+                            <Clock className="mr-2 h-4 w-4" />
                         )}
-                        {uploading ? "Uploading..." : `Post ${uploadType === 'video' ? 'Video' : 'Story'}`}
+                        {uploading && uploadTarget === 'story' ? "Posting..." : "Post as Story (24h)"}
+                    </Button>
+                    <Button
+                        className="w-full"
+                        onClick={() => handleUpload('video')}
+                        disabled={!file || fileType !== 'video' || uploading}
+                    >
+                        {uploading && uploadTarget === 'video' ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <Film className="mr-2 h-4 w-4" />
+                        )}
+                        {uploading && uploadTarget === 'video' ? "Posting..." : "Post to Feed"}
                     </Button>
                 </CardFooter>
             </Card>

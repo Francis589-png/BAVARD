@@ -471,7 +471,7 @@ export default function ChatPage() {
                 <SidebarContent>
                     <SidebarGroup>
                        <SidebarGroupLabel>Actions</SidebarGroupLabel>
-                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => router.push('/story/create')}>
+                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => router.push('/create-post')}>
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Create Post
                         </Button>
