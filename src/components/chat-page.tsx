@@ -425,7 +425,7 @@ export default function ChatPage() {
                        <SidebarGroupLabel>Actions</SidebarGroupLabel>
                         <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => router.push('/story/create')}>
                             <PlusCircle className="mr-2 h-4 w-4" />
-                            Add to Story
+                            Create Post
                         </Button>
                        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setIsAddContactOpen(true)}>
                             <UserPlus className="mr-2 h-4 w-4" />
@@ -611,3 +611,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
