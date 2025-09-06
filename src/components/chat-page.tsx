@@ -392,8 +392,7 @@ export default function ChatPage() {
 
           const chatId = [user.uid, selectedContact.id].sort().join('_');
           const messagesCollection = collection(db, 'chats', chatId, 'messages');
-          const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
-
+          
           const messageDoc = {
             senderId: user.uid,
             timestamp: serverTimestamp(),
@@ -403,6 +402,8 @@ export default function ChatPage() {
           };
           await addDoc(messagesCollection, messageDoc);
 
+          // Create notification for the recipient
+          const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
           const notificationDoc = {
             type: 'new_message',
             senderId: user.uid,
@@ -799,8 +800,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
-    
-
-    
