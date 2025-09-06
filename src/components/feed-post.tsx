@@ -192,14 +192,12 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                 <div className="flex items-end">
                     <div className="flex-1">
                         <div className="flex items-center gap-2">
-                             <Link href={`/profile/${user.id}`} passHref>
-                                <a className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                    <Avatar className="h-10 w-10 border-2 border-white">
-                                        <AvatarImage src={user.avatar} />
-                                        <AvatarFallback>{user.name?.charAt(0)}</AvatarFallback>
-                                    </Avatar>
-                                    <p className="font-bold text-white">{user.name}</p>
-                                </a>
+                             <Link href={`/profile/${user.id}`} className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <Avatar className="h-10 w-10 border-2 border-white">
+                                    <AvatarImage src={user.avatar} />
+                                    <AvatarFallback>{user.name?.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <p className="font-bold text-white">{user.name}</p>
                             </Link>
                         </div>
                         <h3 className="text-white font-bold text-lg mt-2">{title}</h3>
