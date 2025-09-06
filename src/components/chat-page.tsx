@@ -36,6 +36,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "./ui/badge";
+import notificationSound from "@/public/notification.mp3";
 
 
 interface ChatUser {
@@ -118,9 +119,8 @@ export default function ChatPage() {
       }
     });
     
-    // Preload audio on client
-    if (typeof window !== 'undefined') {
-        notificationSoundRef.current = new Audio('/notification.mp3');
+    if (typeof window !== 'undefined' && !notificationSoundRef.current) {
+        notificationSoundRef.current = new Audio(notificationSound);
         notificationSoundRef.current.preload = 'auto';
     }
 
@@ -848,4 +848,5 @@ export default function ChatPage() {
   );
 }
 
+    
     
