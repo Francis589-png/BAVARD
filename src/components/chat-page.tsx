@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,8 @@ import {
   SidebarGroupLabel,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp } from "firebase/firestore";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
@@ -33,6 +34,7 @@ import Link from "next/link";
 import { StoryViewer } from "./story-viewer";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { formatDistanceToNow } from "date-fns";
 
 
 interface ChatUser {
@@ -64,6 +66,16 @@ interface Story {
     userName: string;
 }
 
+interface Notification {
+    id: string;
+    type: 'new_message';
+    senderId: string;
+    senderName: string;
+    chatId: string;
+    timestamp: Timestamp;
+    read: boolean;
+}
+
 
 export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -82,6 +94,9 @@ export default function ChatPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [hasUnread, setHasUnread] = useState(false);
+  const notificationSoundRef = useRef<HTMLAudioElement | null>(null);
 
   const router = useRouter();
   const { toast } = useToast();
@@ -99,6 +114,12 @@ export default function ChatPage() {
         router.push("/login");
       }
     });
+    
+    // Preload audio on client
+    if (typeof window !== 'undefined') {
+        notificationSoundRef.current = new Audio('/notification.mp3');
+        notificationSoundRef.current.preload = 'auto';
+    }
 
     return () => unsubscribe();
   }, [router]);
@@ -243,6 +264,38 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!user) return;
+    
+    const notificationsQuery = query(
+        collection(db, 'users', user.uid, 'notifications'),
+        orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+        const newNotifications: Notification[] = [];
+        let foundUnread = false;
+        snapshot.forEach(doc => {
+            const data = doc.data() as Notification;
+            newNotifications.push({ id: doc.id, ...data });
+            if (!data.read) {
+                foundUnread = true;
+            }
+        });
+
+        // Play sound only if there's a new unread notification
+        // that wasn't there before
+        const hasNewUnread = newNotifications.some(n => !n.read && !notifications.find(o => o.id === n.id));
+        if (hasNewUnread && notificationSoundRef.current) {
+            notificationSoundRef.current.play().catch(e => console.error("Error playing sound", e));
+        }
+
+        setNotifications(newNotifications);
+        setHasUnread(foundUnread);
+    });
+
+    return () => unsubscribe();
+  }, [user, notifications]);
 
   const handleSignOut = async () => {
     try {
@@ -268,6 +321,7 @@ export default function ChatPage() {
 
     const chatId = [user.uid, selectedContact.id].sort().join("_");
     const messagesCollection = collection(db, "chats", chatId, "messages");
+    const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
 
     try {
         await addDoc(messagesCollection, {
@@ -276,6 +330,16 @@ export default function ChatPage() {
             timestamp: serverTimestamp(),
             type: 'text',
         });
+        
+        await addDoc(notificationCollection, {
+            type: 'new_message',
+            senderId: user.uid,
+            senderName: user.displayName || user.email,
+            chatId: chatId,
+            timestamp: serverTimestamp(),
+            read: false,
+        });
+
         setNewMessage("");
     } catch (error) {
         toast({
@@ -320,6 +384,7 @@ export default function ChatPage() {
 
           const chatId = [user.uid, selectedContact.id].sort().join('_');
           const messagesCollection = collection(db, 'chats', chatId, 'messages');
+          const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
 
           await addDoc(messagesCollection, {
             senderId: user.uid,
@@ -328,6 +393,16 @@ export default function ChatPage() {
             url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
             fileName: resolvedFileName,
           });
+
+          await addDoc(notificationCollection, {
+            type: 'new_message',
+            senderId: user.uid,
+            senderName: user.displayName || user.email,
+            chatId: chatId,
+            timestamp: serverTimestamp(),
+            read: false,
+          });
+
         } catch (error) {
           console.error('File upload error:', error);
           toast({
@@ -442,6 +517,19 @@ export default function ChatPage() {
       toast({ title: "Contact Added", description: `You and ${contactUser.name || contactUser.email} are now contacts.` });
       setIsAddContactOpen(false);
   };
+
+  const markNotificationsAsRead = async () => {
+    if (!user || !hasUnread) return;
+    const batch = writeBatch(db);
+    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
+    notifications.forEach(n => {
+        if (!n.read) {
+            const docRef = doc(notificationsRef, n.id);
+            batch.update(docRef, { read: true });
+        }
+    });
+    await batch.commit();
+  }
   
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -471,6 +559,33 @@ export default function ChatPage() {
                 <SidebarContent>
                     <SidebarGroup>
                        <SidebarGroupLabel>Actions</SidebarGroupLabel>
+                        <Popover onOpenChange={(isOpen) => { if (!isOpen) markNotificationsAsRead() }}>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm" className="w-full justify-start relative">
+                                    <Bell className="mr-2 h-4 w-4" />
+                                    Notifications
+                                    {hasUnread && <span className="absolute right-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-red-500" />}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80">
+                                <div className="space-y-2">
+                                    <h4 className="font-medium leading-none">Notifications</h4>
+                                    <div className="space-y-1">
+                                        {notifications.length > 0 ? notifications.map(n => (
+                                            <div key={n.id} className={`p-2 rounded-md ${!n.read ? 'bg-primary/10' : ''}`}>
+                                                <p className="text-sm font-medium">New Message</p>
+                                                <p className="text-sm text-muted-foreground">From: {n.senderName}</p>
+                                                <p className="text-xs text-muted-foreground/80 mt-1">
+                                                    {n.timestamp ? formatDistanceToNow(n.timestamp.toDate(), { addSuffix: true }) : ''}
+                                                </p>
+                                            </div>
+                                        )) : (
+                                            <p className="text-sm text-muted-foreground text-center p-4">No new notifications.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                         <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => router.push('/create-post')}>
                             <PlusCircle className="mr-2 h-4 w-4" />
                             Create Post
