@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -435,6 +435,12 @@ export default function ChatPage() {
                           <Button variant="ghost" size="sm" className="w-full justify-start">
                               <Compass className="mr-2 h-4 w-4" />
                               Explore New Friends
+                          </Button>
+                        </Link>
+                        <Link href="/foryou" passHref>
+                          <Button variant="ghost" size="sm" className="w-full justify-start">
+                              <Film className="mr-2 h-4 w-4" />
+                              For You
                           </Button>
                         </Link>
                     </SidebarGroup>
