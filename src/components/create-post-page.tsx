@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Image as ImageIcon, Video, Film, Clock } from "lucide-react";
+import { Loader2, ArrowLeft, Image as ImageIcon, Film, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
@@ -18,7 +18,7 @@ export default function CreatePostPage() {
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
     const [uploading, setUploading] = useState(false);
-    const [uploadTarget, setUploadTarget] = useState<'story' | 'video' | null>(null);
+    const [uploadTarget, setUploadTarget] = useState<'story' | 'feed' | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [description, setDescription] = useState("");
@@ -65,16 +65,11 @@ export default function CreatePostPage() {
         }
     };
 
-    const handleUpload = async (target: 'story' | 'video') => {
+    const handleUpload = async (target: 'story' | 'feed') => {
         if (!file || !user || !fileType) return;
         
         if (target === 'story' && fileType !== 'image') {
             toast({ variant: 'destructive', title: 'Invalid File', description: 'Stories only support images.'});
-            return;
-        }
-
-        if (target === 'video' && fileType !== 'video') {
-            toast({ variant: 'destructive', title: 'Invalid File', description: 'The feed only supports videos.'});
             return;
         }
 
@@ -90,19 +85,20 @@ export default function CreatePostPage() {
                     const ipfsHash = await uploadFile({ dataUri, fileName: file.name });
                     const mediaUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
 
-                    if (target === 'video') {
-                        const videosCollection = collection(db, 'videos');
-                        await addDoc(videosCollection, {
+                    if (target === 'feed') {
+                        const postsCollection = collection(db, 'posts');
+                        await addDoc(postsCollection, {
                             userId: user.uid,
-                            videoUrl: mediaUrl,
+                            mediaUrl: mediaUrl,
+                            mediaType: fileType,
                             description: description,
                             createdAt: serverTimestamp(),
                             likes: [],
                         });
-                        toast({ title: "Video Uploaded!", description: "Your video is now on the For You page." });
+                        toast({ title: "Post Uploaded!", description: "Your post is now on the For You page." });
                         router.push("/foryou");
 
-                    } else { // 'image' for stories
+                    } else { // 'story'
                         const storiesCollection = collection(db, 'stories');
                         const now = Timestamp.now();
                         const expiresAt = new Timestamp(now.seconds + 24 * 60 * 60, now.nanoseconds);
@@ -178,9 +174,9 @@ export default function CreatePostPage() {
                             accept="image/*,video/*"
                         />
                     </div>
-                    {fileType === 'video' && (
+                    {file && (
                         <Textarea 
-                            placeholder="Add a description for your video..."
+                            placeholder="Add a description..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             className="resize-none"
@@ -204,15 +200,15 @@ export default function CreatePostPage() {
                     </Button>
                     <Button
                         className="w-full"
-                        onClick={() => handleUpload('video')}
-                        disabled={!file || fileType !== 'video' || uploading}
+                        onClick={() => handleUpload('feed')}
+                        disabled={!file || uploading}
                     >
-                        {uploading && uploadTarget === 'video' ? (
+                        {uploading && uploadTarget === 'feed' ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
                             <Film className="mr-2 h-4 w-4" />
                         )}
-                        {uploading && uploadTarget === 'video' ? "Posting..." : "Post to Feed"}
+                        {uploading && uploadTarget === 'feed' ? "Posting..." : "Post to Feed"}
                     </Button>
                 </CardFooter>
             </Card>

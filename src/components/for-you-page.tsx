@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp } from "firebase/firestore";
-import VideoPost, { VideoPostProps } from "./video-post";
+import FeedPost, { FeedPostProps } from "./feed-post";
 import Link from "next/link";
 import { Card } from "./ui/card";
 
@@ -22,7 +22,7 @@ interface ChatUser {
 export default function ForYouPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [videos, setVideos] = useState<VideoPostProps[]>([]);
+  const [posts, setPosts] = useState<FeedPostProps[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -40,18 +40,16 @@ export default function ForYouPage() {
   useEffect(() => {
     if (!user) return;
 
-    const videosQuery = query(collection(db, "videos"), orderBy("createdAt", "desc"));
+    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
 
-    const unsubscribeVideos = onSnapshot(videosQuery, async (snapshot) => {
-      const videosData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubscribePosts = onSnapshot(postsQuery, async (snapshot) => {
+      const postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      const authorIds = Array.from(new Set(videosData.map(v => v.userId)));
+      const authorIds = Array.from(new Set(postsData.map(v => v.userId)));
       const usersData: Record<string, Partial<ChatUser>> = {};
 
       if (authorIds.length > 0) {
         const usersRef = collection(db, 'users');
-        // Firestore 'in' query has a limit of 10 items.
-        // For a real app, you would need to batch these requests.
         const usersQuery = query(usersRef, where('__name__', 'in', authorIds.slice(0, 10)));
         const usersSnapshot = await getDocs(usersQuery);
         usersSnapshot.forEach(doc => {
@@ -60,25 +58,26 @@ export default function ForYouPage() {
         });
       }
       
-      const fetchedVideos: VideoPostProps[] = videosData.map(video => {
-        const author = usersData[video.userId] || { name: 'Unknown', avatar: '' };
+      const fetchedPosts: FeedPostProps[] = postsData.map(post => {
+        const author = usersData[post.userId] || { name: 'Unknown', avatar: '' };
         return {
-          id: video.id,
-          videoUrl: video.videoUrl,
-          description: video.description,
+          id: post.id,
+          mediaUrl: post.mediaUrl,
+          mediaType: post.mediaType,
+          description: post.description,
           user: {
             name: author.name || 'Unknown User',
             avatar: author.avatar || ''
           },
-          createdAt: video.createdAt,
+          createdAt: post.createdAt,
         };
       });
 
-      setVideos(fetchedVideos);
+      setPosts(fetchedPosts);
       setLoading(false);
     });
 
-    return () => unsubscribeVideos();
+    return () => unsubscribePosts();
   }, [user]);
 
   if (loading || !user) {
@@ -100,19 +99,19 @@ export default function ForYouPage() {
       </header>
 
       <div className="relative h-full w-full">
-        {videos.length > 0 ? (
-           videos.map(video => (
-            <div key={video.id} className="h-screen w-full flex items-center justify-center snap-start">
-               <VideoPost {...video} />
+        {posts.length > 0 ? (
+           posts.map(post => (
+            <div key={post.id} className="h-screen w-full flex items-center justify-center snap-start">
+               <FeedPost {...post} />
             </div>
           ))
         ) : (
           <div className="h-screen w-full flex items-center justify-center snap-start">
             <div className="text-center">
-              <h2 className="text-2xl font-bold">No Videos Yet</h2>
-              <p className="text-muted-foreground">Be the first to post a video!</p>
+              <h2 className="text-2xl font-bold">No Posts Yet</h2>
+              <p className="text-muted-foreground">Be the first to post something!</p>
               <Button onClick={() => router.push('/create-post')} className="mt-4">
-                  Upload Video
+                  Create Post
               </Button>
             </div>
           </div>

@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Timestamp } from "firebase/firestore";
-import { Heart, MessageCircle, Share2, Play, Pause, Image as ImageIcon } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, Pause } from "lucide-react";
 import { Button } from "./ui/button";
 
 export interface FeedPostProps {
