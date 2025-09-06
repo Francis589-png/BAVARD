@@ -131,7 +131,7 @@ export function CommentSheet({ isOpen, onOpenChange, post, currentUser }: Commen
                              <div key={comment.id} className="flex items-start gap-3">
                                 <Avatar className="h-9 w-9">
                                     <AvatarImage src={comment.user.avatar} />
-                                    <AvatarFallback>{comment.user.name.charAt(0)}</AvatarFallback>
+                                    <AvatarFallback>{comment.user.name?.charAt(0) || '?'}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2">
@@ -164,4 +164,3 @@ export function CommentSheet({ isOpen, onOpenChange, post, currentUser }: Commen
         </Sheet>
     );
 }
-
