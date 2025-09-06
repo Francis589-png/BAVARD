@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -77,6 +77,11 @@ export default function ChatPage() {
   
   const [stories, setStories] = useState<Story[]>([]);
   const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
 
   const router = useRouter();
   const { toast } = useToast();
@@ -354,6 +359,49 @@ export default function ChatPage() {
     }
   };
 
+  const handleStartRecording = async () => {
+    if (isRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      
+      mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
+        audioChunksRef.current.push(event.data);
+      });
+      
+      mediaRecorderRef.current.addEventListener("stop", async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+        // Stop all media tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+      });
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      toast({ title: "Recording Started", description: "Press the button again to stop." });
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      toast({ variant: "destructive", title: "Recording Error", description: "Could not start recording. Please ensure you have given microphone permissions." });
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      toast({ title: "Recording Stopped", description: "Uploading your message..." });
+    }
+  };
+
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      handleStopRecording();
+    } else {
+      handleStartRecording();
+    }
+  };
+
 
   const handleAddContact = async (contactEmail: string) => {
       if (!user) return;
@@ -539,10 +587,10 @@ export default function ChatPage() {
                                               <span>{message.fileName || 'Download File'}</span>
                                            </a>
                                        )}
-                                       {message.type === 'audio' && (
-                                           <div className="flex items-center gap-2">
-                                               <span>Voice message (unavailable)</span>
-                                           </div>
+                                       {message.type === 'audio' && message.url && (
+                                           <audio controls src={message.url} className="max-w-full">
+                                                Your browser does not support the audio element.
+                                           </audio>
                                        )}
                                        <p className="text-xs text-right opacity-70 mt-1">
                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -556,20 +604,35 @@ export default function ChatPage() {
 
                      <footer className="p-4 border-t">
                         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline}>
+                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline || isRecording}>
                                 <Paperclip className="w-5 h-5" />
                                 <span className="sr-only">Attach file</span>
                             </Button>
-                             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                            <Input 
-                                placeholder={isOnline ? "Type a message..." : "You are offline"}
-                                className="flex-1"
-                                value={newMessage}
-                                onChange={(e) => setNewMessage(e.target.value)}
-                                disabled={uploading || !isOnline}
-                             />
-                            <Button type="submit" size="icon" disabled={uploading || !isOnline || newMessage.trim() === ""}>
+                             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
+                            
+                            {isRecording ? (
+                                <div className="flex-1 flex items-center justify-center text-destructive animate-pulse">
+                                    <StopCircle className="mr-2 h-5 w-5" />
+                                    <span>Recording...</span>
+                                </div>
+                            ) : (
+                                <Input 
+                                    placeholder={isOnline ? "Type a message..." : "You are offline"}
+                                    className="flex-1"
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    disabled={uploading || !isOnline}
+                                />
+                            )}
+                            
+                            <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
+                                {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
+                            </Button>
+
+                            <Button type="submit" size="icon" disabled={uploading || !isOnline || isRecording || newMessage.trim() === ""}>
                                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                                <span className="sr-only">Send Message</span>
                             </Button>
                         </form>
                     </footer>
@@ -611,5 +674,7 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
 
     
