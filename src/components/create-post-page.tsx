@@ -13,6 +13,7 @@ import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
 import { Textarea } from "./ui/textarea";
+import { Input } from "./ui/input";
 
 export default function CreatePostPage() {
     const [user, setUser] = useState<User | null>(null);
@@ -21,6 +22,7 @@ export default function CreatePostPage() {
     const [uploadTarget, setUploadTarget] = useState<'story' | 'feed' | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
+    const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [fileType, setFileType] = useState<'image' | 'video' | null>(null);
     
@@ -68,6 +70,11 @@ export default function CreatePostPage() {
     const handleUpload = async (target: 'story' | 'feed') => {
         if (!file || !user || !fileType) return;
         
+        if (target === 'feed' && title.trim() === '') {
+            toast({ variant: 'destructive', title: 'Title Required', description: 'Please enter a title for your post.'});
+            return;
+        }
+        
         if (target === 'story' && fileType !== 'image') {
             toast({ variant: 'destructive', title: 'Invalid File', description: 'Stories only support images.'});
             return;
@@ -91,6 +98,7 @@ export default function CreatePostPage() {
                             userId: user.uid,
                             mediaUrl: mediaUrl,
                             mediaType: fileType,
+                            title: title,
                             description: description,
                             createdAt: serverTimestamp(),
                             likes: [],
@@ -147,7 +155,7 @@ export default function CreatePostPage() {
                 <CardHeader>
                     <CardTitle>Create a New Post</CardTitle>
                     <CardDescription>
-                        Select an image for a temporary story or a video for the permanent feed.
+                        Select a file and choose whether to post it as a temporary story or to the permanent feed.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -175,13 +183,22 @@ export default function CreatePostPage() {
                         />
                     </div>
                     {file && (
-                        <Textarea 
-                            placeholder="Add a description..."
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            className="resize-none"
-                            disabled={uploading}
-                        />
+                        <div className="space-y-2">
+                           <Input 
+                                placeholder="Post Title"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="font-bold"
+                                disabled={uploading}
+                            />
+                            <Textarea 
+                                placeholder="Add a description..."
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                className="resize-none"
+                                disabled={uploading}
+                            />
+                        </div>
                     )}
                 </CardContent>
                 <CardFooter className="flex flex-col gap-3">

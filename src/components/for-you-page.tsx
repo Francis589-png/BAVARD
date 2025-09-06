@@ -6,11 +6,12 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Search } from "lucide-react";
 import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp } from "firebase/firestore";
 import FeedPost, { FeedPostProps } from "./feed-post";
 import Link from "next/link";
 import { CommentSheet } from "./comment-sheet";
+import { Input } from "./ui/input";
 
 
 interface ChatUser {
@@ -34,6 +35,8 @@ export default function ForYouPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
   const router = useRouter();
 
   const [isCommentSheetOpen, setIsCommentSheetOpen] = useState(false);
@@ -92,6 +95,15 @@ export default function ForYouPage() {
     return () => unsubscribePosts();
   }, [user]);
 
+  useEffect(() => {
+    const lowercasedQuery = searchQuery.toLowerCase();
+    const filtered = posts.filter(post => 
+      post.title?.toLowerCase().includes(lowercasedQuery) ||
+      post.description?.toLowerCase().includes(lowercasedQuery)
+    );
+    setFilteredPosts(filtered);
+  }, [searchQuery, posts]);
+
   const handleCommentClick = (post: Post) => {
     setSelectedPostForComments(post);
     setIsCommentSheetOpen(true);
@@ -108,17 +120,26 @@ export default function ForYouPage() {
   return (
     <>
       <div className="bg-black text-white h-screen overflow-y-scroll snap-y snap-mandatory">
-        <header className="fixed top-0 left-0 z-10 p-4">
+        <header className="fixed top-0 left-0 z-10 p-4 flex items-center w-full gap-4">
           <Link href="/chat" passHref>
-            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 flex-shrink-0">
               <ArrowLeft />
             </Button>
           </Link>
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Input 
+              placeholder="Search by title..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-gray-800/80 border-gray-700 text-white pl-10 w-full"
+            />
+          </div>
         </header>
 
-        <div className="relative h-full w-full">
-          {posts.length > 0 ? (
-            posts.map(post => (
+        <div className="relative h-full w-full pt-16">
+          {filteredPosts.length > 0 ? (
+            filteredPosts.map(post => (
               <div key={post.id} className="h-screen w-full flex items-center justify-center snap-start">
                 <FeedPost 
                   {...post} 
@@ -130,8 +151,10 @@ export default function ForYouPage() {
           ) : (
             <div className="h-screen w-full flex items-center justify-center snap-start">
               <div className="text-center">
-                <h2 className="text-2xl font-bold">No Posts Yet</h2>
-                <p className="text-muted-foreground">Be the first to post something!</p>
+                <h2 className="text-2xl font-bold">{searchQuery ? "No Results Found" : "No Posts Yet"}</h2>
+                <p className="text-muted-foreground">
+                  {searchQuery ? "Try a different search term." : "Be the first to post something!"}
+                </p>
                 <Button onClick={() => router.push('/create-post')} className="mt-4">
                     Create Post
                 </Button>

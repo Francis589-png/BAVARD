@@ -14,6 +14,7 @@ export interface FeedPostProps {
     id: string;
     mediaUrl: string;
     mediaType: 'image' | 'video';
+    title: string;
     description: string;
     user: {
         id: string;
@@ -26,7 +27,7 @@ export interface FeedPostProps {
     onCommentClick: () => void;
 }
 
-export default function FeedPost({ id, mediaUrl, mediaType, description, user, likes, currentUserId, onCommentClick }: FeedPostProps) {
+export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const { toast } = useToast();
@@ -149,7 +150,8 @@ export default function FeedPost({ id, mediaUrl, mediaType, description, user, l
                             </Avatar>
                             <p className="font-bold text-white">{user.name}</p>
                         </div>
-                        <p className="text-white mt-2 text-sm">{description}</p>
+                        <h3 className="text-white font-bold text-lg mt-2">{title}</h3>
+                        <p className="text-white mt-1 text-sm">{description}</p>
                     </div>
                     <div className="flex flex-col items-center gap-2 text-white">
                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full flex flex-col h-auto p-2" onClick={handleLike}>
@@ -169,4 +171,3 @@ export default function FeedPost({ id, mediaUrl, mediaType, description, user, l
         </div>
     );
 }
-
