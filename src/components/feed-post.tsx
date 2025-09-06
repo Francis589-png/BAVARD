@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind, Volume2, VolumeX } from "lucide-react";
 import { Button } from "./ui/button";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +30,7 @@ export interface FeedPostProps {
 export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
     const { toast } = useToast();
 
     const [isLiked, setIsLiked] = useState(currentUserId ? likes.includes(currentUserId) : false);
@@ -48,7 +49,6 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
             videoRef.current.play().then(() => {
                 setIsPlaying(true);
             }).catch(() => {
-                // If play fails, likely due to browser policy, we ensure UI is correct
                 setIsPlaying(false);
             });
         } else {
@@ -68,6 +68,14 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         e.stopPropagation();
         if (videoRef.current) {
             videoRef.current.currentTime += 10;
+        }
+    };
+    
+    const handleToggleMute = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (videoRef.current) {
+            videoRef.current.muted = !videoRef.current.muted;
+            setIsMuted(videoRef.current.muted);
         }
     };
 
@@ -153,7 +161,7 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                     loop
                     className="w-full h-full object-cover"
                     playsInline
-                    muted // Muting is often required for autoplay to work
+                    muted // Start muted for autoplay
                 />
             ) : (
                 <Image
@@ -164,6 +172,12 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                 />
             )}
             
+            <div className="absolute top-4 right-4 z-10">
+                <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={handleToggleMute}>
+                   {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+                   <span className="sr-only">Toggle sound</span>
+                </Button>
+            </div>
 
             {mediaType === 'video' && !isPlaying && (
                  <div className="absolute inset-0 flex items-center justify-center gap-8 bg-black/30 pointer-events-none">
