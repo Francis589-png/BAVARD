@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { Heart, MessageCircle, Share2, Play, Pause } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind } from "lucide-react";
 import { Button } from "./ui/button";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -57,6 +57,20 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         }
     };
     
+    const handleRewind = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (videoRef.current) {
+            videoRef.current.currentTime -= 10;
+        }
+    };
+
+    const handleForward = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (videoRef.current) {
+            videoRef.current.currentTime += 10;
+        }
+    };
+
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentUserId) {
@@ -152,8 +166,10 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
             
 
             {mediaType === 'video' && !isPlaying && (
-                 <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                 <div className="absolute inset-0 flex items-center justify-center gap-8 bg-black/30 pointer-events-none">
+                    <Button variant="ghost" size="icon" className="text-white/70 h-16 w-16 pointer-events-auto" onClick={handleRewind}><Rewind className="h-10 w-10" /></Button>
                     <Play className="h-16 w-16 text-white/70" />
+                    <Button variant="ghost" size="icon" className="text-white/70 h-16 w-16 pointer-events-auto" onClick={handleForward}><FastForward className="h-10 w-10" /></Button>
                 </div>
             )}
            
