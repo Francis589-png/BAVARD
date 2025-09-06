@@ -278,7 +278,7 @@ export default function ChatPage() {
 
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
-                const newNotif = change.doc.data() as Notification;
+                const newNotif = {id: change.doc.id, ...change.doc.data()} as Notification;
                  if (!newNotif.read) {
                     if (notificationSoundRef.current) {
                         notificationSoundRef.current.play().catch(e => console.error("Error playing sound", e));
@@ -329,21 +329,23 @@ export default function ChatPage() {
     const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
 
     try {
-        await addDoc(messagesCollection, {
+        const messageDoc = {
             text: newMessage,
             senderId: user.uid,
             timestamp: serverTimestamp(),
             type: 'text',
-        });
+        };
+        await addDoc(messagesCollection, messageDoc);
         
-        await addDoc(notificationCollection, {
+        const notificationDoc = {
             type: 'new_message',
             senderId: user.uid,
             senderName: user.displayName || user.email,
             chatId: chatId,
             timestamp: serverTimestamp(),
             read: false,
-        });
+        };
+        await addDoc(notificationCollection, notificationDoc);
 
         setNewMessage("");
     } catch (error) {
@@ -391,22 +393,24 @@ export default function ChatPage() {
           const messagesCollection = collection(db, 'chats', chatId, 'messages');
           const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
 
-          await addDoc(messagesCollection, {
+          const messageDoc = {
             senderId: user.uid,
             timestamp: serverTimestamp(),
             type: messageType,
             url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
             fileName: resolvedFileName,
-          });
+          };
+          await addDoc(messagesCollection, messageDoc);
 
-          await addDoc(notificationCollection, {
+          const notificationDoc = {
             type: 'new_message',
             senderId: user.uid,
             senderName: user.displayName || user.email,
             chatId: chatId,
             timestamp: serverTimestamp(),
             read: false,
-          });
+          };
+          await addDoc(notificationCollection, notificationDoc);
 
         } catch (error) {
           console.error('File upload error:', error);
