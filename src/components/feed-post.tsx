@@ -45,8 +45,12 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         if (mediaType !== 'video' || !videoRef.current) return;
         
         if (videoRef.current.paused) {
-            videoRef.current.play();
-            setIsPlaying(true);
+            videoRef.current.play().then(() => {
+                setIsPlaying(true);
+            }).catch(() => {
+                // If play fails, likely due to browser policy, we ensure UI is correct
+                setIsPlaying(false);
+            });
         } else {
             videoRef.current.pause();
             setIsPlaying(false);
@@ -95,8 +99,11 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         const observer = new IntersectionObserver(
             ([entry]) => {
                 if (entry.isIntersecting) {
-                    videoElement.play().catch(() => setIsPlaying(false));
-                    setIsPlaying(true);
+                    videoElement.play().then(() => {
+                        setIsPlaying(true);
+                    }).catch(() => {
+                        setIsPlaying(false);
+                    });
                 } else {
                     videoElement.pause();
                     setIsPlaying(false);
@@ -107,12 +114,21 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
 
         observer.observe(videoElement);
 
+        const handleVideoPause = () => setIsPlaying(false);
+        const handleVideoPlay = () => setIsPlaying(true);
+
+        videoElement.addEventListener('pause', handleVideoPause);
+        videoElement.addEventListener('play', handleVideoPlay);
+
         return () => {
             if (videoElement) {
                 observer.unobserve(videoElement);
+                videoElement.removeEventListener('pause', handleVideoPause);
+                videoElement.removeEventListener('play', handleVideoPlay);
             }
         };
     }, [mediaType]);
+
 
     return (
         <div className="relative h-full w-full max-w-md mx-auto rounded-lg overflow-hidden" onClick={togglePlay}>
@@ -123,6 +139,7 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                     loop
                     className="w-full h-full object-cover"
                     playsInline
+                    muted // Muting is often required for autoplay to work
                 />
             ) : (
                 <Image
