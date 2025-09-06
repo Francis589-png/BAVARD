@@ -273,12 +273,10 @@ export default function ChatPage() {
     );
 
     const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
-        const newNotifications: Notification[] = [];
-        let foundUnread = false;
-
+        // This part handles playing sound for new notifications
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
-                const newNotif = {id: change.doc.id, ...change.doc.data()} as Notification;
+                const newNotif = change.doc.data() as Notification;
                  if (!newNotif.read) {
                     if (notificationSoundRef.current) {
                         notificationSoundRef.current.play().catch(e => console.error("Error playing sound", e));
@@ -287,6 +285,9 @@ export default function ChatPage() {
             }
         });
 
+        // This part rebuilds the full list for the UI
+        const newNotifications: Notification[] = [];
+        let foundUnread = false;
         snapshot.docs.forEach(doc => {
             const data = doc.data() as Notification;
             newNotifications.push({ id: doc.id, ...data });
@@ -508,7 +509,7 @@ export default function ChatPage() {
       const contactId = contactUser.id;
 
       const contactDocRef = doc(db, "users", user.uid, "contacts", contactId);
-      const contactDoc = await getDoc(contactDoc);
+      const contactDoc = await getDoc(contactDocRef);
 
       if (contactDoc.exists()) {
           toast({ title: "Already a contact", description: `${contactUser.name || contactUser.email} is already in your contacts.` });
@@ -800,4 +801,6 @@ export default function ChatPage() {
 }
 
     
+    
+
     
