@@ -111,7 +111,7 @@ export default function ForYouPage() {
             <div className="text-center">
               <h2 className="text-2xl font-bold">No Videos Yet</h2>
               <p className="text-muted-foreground">Be the first to post a video!</p>
-              <Button onClick={() => router.push('/story/create')} className="mt-4">
+              <Button onClick={() => router.push('/create-post')} className="mt-4">
                   Upload Video
               </Button>
             </div>
