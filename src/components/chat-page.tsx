@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -729,6 +729,12 @@ export default function ChatPage() {
                             <UserPlus className="mr-2 h-4 w-4" />
                             Add Contact by Email
                         </Button>
+                        <Link href="/drive" passHref>
+                            <Button variant="ghost" size="sm" className="w-full justify-start">
+                                <HardDrive className="mr-2 h-4 w-4" />
+                                My Drive
+                            </Button>
+                        </Link>
                         <Link href="/explore" passHref>
                           <Button variant="ghost" size="sm" className="w-full justify-start">
                               <Compass className="mr-2 h-4 w-4" />
@@ -974,5 +980,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
