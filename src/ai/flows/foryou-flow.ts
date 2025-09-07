@@ -51,7 +51,14 @@ const forYouFeedFlow = ai.defineFlow(
       return { rankedPostIds: [] };
     }
 
-    const { output } = await prompt(input);
-    return output!;
+    try {
+        const { output } = await prompt(input);
+        return output!;
+    } catch (error) {
+        console.error("AI For You feed failed, falling back to chronological", error);
+        // Fallback to chronological sort if the AI call fails
+        const sortedPosts = [...input.posts].sort((a, b) => b.id.localeCompare(a.id));
+        return { rankedPostIds: sortedPosts.map(p => p.id) };
+    }
   }
 );
