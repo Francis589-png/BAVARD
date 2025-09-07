@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "./ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { isAdmin } from "@/services/admin";
 
 
 interface ChatUser {
@@ -114,6 +115,7 @@ export default function ChatPage() {
 
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isClearChatAlertOpen, setIsClearChatAlertOpen] = useState(false);
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
 
 
   const router = useRouter();
@@ -125,9 +127,11 @@ export default function ChatPage() {
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user);
+        const adminStatus = await isAdmin(user.uid);
+        setIsUserAdmin(adminStatus);
         setLoading(false);
       } else {
         router.push("/login");
@@ -747,6 +751,14 @@ export default function ChatPage() {
                               For You
                           </Button>
                         </Link>
+                        {isUserAdmin && (
+                            <Link href="/admin" passHref>
+                                <Button variant="ghost" size="sm" className="w-full justify-start">
+                                    <Shield className="mr-2 h-4 w-4" />
+                                    Admin Panel
+                                </Button>
+                            </Link>
+                        )}
                     </SidebarGroup>
                     <SidebarSeparator />
                      {storyUsers.length > 0 && (

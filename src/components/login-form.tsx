@@ -15,7 +15,7 @@ import {
   User,
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,7 @@ const addUserToFirestore = async (user: User) => {
         email: user.email,
         avatar: user.photoURL,
         online: true,
+        createdAt: serverTimestamp(),
       });
     }
 };
