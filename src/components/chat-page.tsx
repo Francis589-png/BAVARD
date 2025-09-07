@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff, MicOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -112,6 +112,7 @@ export default function ChatPage() {
   const [viewingStoryForUser, setViewingStoryForUser] = useState<ChatUser | null>(null);
   
   const [isRecording, setIsRecording] = useState(false);
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -153,6 +154,13 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [router]);
+  
+   useEffect(() => {
+    // Check for microphone permission on component mount
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(() => setHasMicPermission(true))
+        .catch(() => setHasMicPermission(false));
+  }, []);
 
 
   const selectContact = useCallback(async (contact: ChatUser | null) => {
@@ -177,7 +185,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-  
+    
     const contactsCollection = collection(db, 'users', user.uid, 'contacts');
     const unsubscribeContacts = onSnapshot(
       contactsCollection,
@@ -526,7 +534,12 @@ export default function ChatPage() {
   };
 
   const handleStartRecording = async () => {
-    if (isRecording) return;
+    if (isRecording || !hasMicPermission) {
+        if (!hasMicPermission) {
+            toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser settings." });
+        }
+        return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
@@ -890,6 +903,15 @@ export default function ChatPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
+                        {hasMicPermission === false && (
+                            <Alert>
+                                <MicOff className="h-4 w-4" />
+                                <AlertTitle>Microphone Access Denied</AlertTitle>
+                                <AlertDescription>
+                                    To send voice messages, please enable microphone permissions in your browser settings.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
 
@@ -961,7 +983,7 @@ export default function ChatPage() {
                                     />
                                 )}
                                 
-                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
+                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline || !hasMicPermission}>
                                     {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                                     <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
                                 </Button>
@@ -1041,3 +1063,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
