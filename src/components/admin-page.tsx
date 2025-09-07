@@ -20,6 +20,7 @@ import { Badge } from "./ui/badge";
 import { doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { VerifiedBadge } from "./verified-badge";
 
 
 interface AppStats {
@@ -337,7 +338,10 @@ export default function AdminPage() {
                                                                     <AvatarFallback>{u.name?.[0]}</AvatarFallback>
                                                                 </Avatar>
                                                                 <div>
-                                                                    <div className="font-medium">{u.name}</div>
+                                                                    <div className="font-medium flex items-center gap-1">
+                                                                        {u.name}
+                                                                        {u.isVerified && <VerifiedBadge />}
+                                                                    </div>
                                                                     <div className="text-sm text-muted-foreground">{u.email}</div>
                                                                 </div>
                                                             </div>
@@ -345,7 +349,8 @@ export default function AdminPage() {
                                                         <TableCell className="hidden md:table-cell">
                                                             <div className="flex items-center gap-2">
                                                                 {u.isBanned && <Badge variant="destructive">Banned</Badge>}
-                                                                {u.isVerified && <Badge variant="secondary" className="text-blue-500 border-blue-500">Verified</Badge>}
+                                                                {!u.isBanned && u.isVerified && <Badge variant="secondary" className="border-blue-500 text-blue-500">Verified</Badge>}
+                                                                {!u.isBanned && !u.isVerified && <Badge variant="outline">Active</Badge>}
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right text-muted-foreground hidden md:table-cell">

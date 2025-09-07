@@ -30,6 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { VerifiedBadge } from "./verified-badge";
 
 
 interface ProfileUser {
@@ -37,6 +38,7 @@ interface ProfileUser {
     name: string;
     email: string;
     avatar: string;
+    isVerified?: boolean;
 }
 
 interface Post {
@@ -258,7 +260,10 @@ export default function ProfilePage({ userId }: { userId: string }) {
                             )}
                         </div>
                         <div className="flex-1 text-center md:text-left">
-                            <CardTitle className="text-3xl">{profileUser.name}</CardTitle>
+                            <CardTitle className="text-3xl flex items-center gap-2 justify-center md:justify-start">
+                                {profileUser.name}
+                                {profileUser.isVerified && <VerifiedBadge className="h-7 w-7" />}
+                            </CardTitle>
                             <CardDescription>{profileUser.email}</CardDescription>
                             <div className="flex justify-center md:justify-start gap-4 mt-4">
                                 <div>

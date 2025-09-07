@@ -49,6 +49,7 @@ import { Badge } from "./ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { isAdmin } from "@/services/admin";
 import ViewOnceMessage from "./view-once-message";
+import { VerifiedBadge } from "./verified-badge";
 
 
 interface ChatUser {
@@ -58,6 +59,7 @@ interface ChatUser {
   online: boolean;
   email: string;
   unreadCount?: number;
+  isVerified?: boolean;
 }
 
 interface Message {
@@ -849,7 +851,10 @@ export default function ChatPage() {
                             <AvatarFallback>{selectedContact.name?.charAt(0) || selectedContact.email?.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="ml-4 flex-1">
-                            <h2 className="text-lg font-semibold">{selectedContact.name || selectedContact.email}</h2>
+                            <h2 className="text-lg font-semibold flex items-center gap-1.5">
+                                {selectedContact.name || selectedContact.email}
+                                {selectedContact.isVerified && <VerifiedBadge />}
+                            </h2>
                         </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>

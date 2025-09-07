@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "./ui/badge";
+import { VerifiedBadge } from "./verified-badge";
 
 export interface FeedPostProps {
     id: string;
@@ -39,6 +40,7 @@ export interface FeedPostProps {
         id: string;
         name: string;
         avatar: string;
+        isVerified?: boolean;
     };
     likes: string[];
     createdAt: Timestamp;
@@ -277,7 +279,10 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                                     <AvatarImage src={user.avatar} />
                                     <AvatarFallback>{user.name?.charAt(0)}</AvatarFallback>
                                 </Avatar>
-                                <p className="font-bold text-white">{user.name}</p>
+                                <div className="font-bold text-white flex items-center gap-1.5">
+                                    {user.name}
+                                    {user.isVerified && <VerifiedBadge />}
+                                </div>
                             </Link>
                         </div>
                         <h3 className="text-white font-bold text-lg mt-2">{title}</h3>
