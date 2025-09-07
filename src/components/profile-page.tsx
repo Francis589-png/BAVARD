@@ -40,6 +40,7 @@ interface ProfileUser {
     email: string;
     avatar: string;
     isVerified?: boolean;
+    description?: string;
 }
 
 interface Post {
@@ -266,6 +267,7 @@ export default function ProfilePage({ userId }: { userId: string }) {
                                 {profileUser.isVerified && <VerifiedBadge className="h-7 w-7" />}
                             </CardTitle>
                             <CardDescription>{profileUser.email}</CardDescription>
+                            <p className="mt-4 text-sm text-muted-foreground max-w-prose">{profileUser.description || (isMyProfile && "No bio yet. Click here to add one.")}</p>
                             <div className="flex justify-center md:justify-start gap-4 mt-4">
                                 <div>
                                     <p className="font-bold text-lg">{posts.length}</p>
