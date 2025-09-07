@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play, Trash2, MoreVertical, ShieldCheck } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play, Trash2, MoreVertical, ShieldCheck, Edit, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { VerifiedBadge } from "./verified-badge";
 import Link from "next/link";
+import { Textarea } from "./ui/textarea";
+import { Input } from "./ui/input";
 
 
 interface ProfileUser {
@@ -64,6 +66,11 @@ export default function ProfilePage({ userId }: { userId: string }) {
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [postToDelete, setPostToDelete] = useState<string | null>(null);
+    
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedName, setEditedName] = useState("");
+    const [editedDescription, setEditedDescription] = useState("");
+
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
@@ -87,12 +94,16 @@ export default function ProfilePage({ userId }: { userId: string }) {
             try {
                 // Fetch user data
                 const userDocRef = doc(db, 'users', userId);
-                const userDoc = await getDoc(userDocRef);
-                if (userDoc.exists()) {
-                    setProfileUser(userDoc.data() as ProfileUser);
-                } else {
-                    toast({ variant: 'destructive', title: 'User not found' });
-                }
+                const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
+                    if (doc.exists()) {
+                        const userData = doc.data() as ProfileUser;
+                        setProfileUser(userData);
+                        setEditedName(userData.name);
+                        setEditedDescription(userData.description || "");
+                    } else {
+                        toast({ variant: 'destructive', title: 'User not found' });
+                    }
+                });
 
                  // Fetch user's posts
                 const postsQuery = query(collection(db, 'posts'), where('userId', '==', userId));
@@ -101,7 +112,10 @@ export default function ProfilePage({ userId }: { userId: string }) {
                     setPosts(userPosts);
                 });
                 
-                return () => unsubscribePosts();
+                return () => {
+                    unsubscribeUser();
+                    unsubscribePosts();
+                };
 
             } catch (error) {
                 console.error("Error fetching profile data: ", error);
@@ -168,7 +182,6 @@ export default function ProfilePage({ userId }: { userId: string }) {
                 await updateDoc(userDocRef, { avatar: newAvatarUrl });
 
                 toast({ title: "Profile Updated!", description: "Your new profile picture is now set." });
-                setProfileUser(prev => prev ? { ...prev, avatar: newAvatarUrl } : null);
                 setImageFile(null);
                 setImagePreview(null);
             } catch (error) {
@@ -179,6 +192,33 @@ export default function ProfilePage({ userId }: { userId: string }) {
             }
         };
     };
+    
+    const handleSaveProfile = async () => {
+        if (!currentUser || !isMyProfile) return;
+        
+        setUploading(true);
+        try {
+            // Update auth profile
+            await updateProfile(currentUser, { displayName: editedName });
+            
+            // Update firestore document
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            await updateDoc(userDocRef, {
+                name: editedName,
+                description: editedDescription,
+            });
+
+            toast({ title: "Profile Saved", description: "Your changes have been saved successfully." });
+            setIsEditing(false);
+
+        } catch (error) {
+             console.error('Profile save error:', error);
+            toast({ variant: 'destructive', title: 'Save Error', description: 'Failed to save your profile.' });
+        } finally {
+            setUploading(false);
+        }
+    };
+
 
     const handleShareInvite = () => {
         if (!profileUser) return;
@@ -241,6 +281,19 @@ export default function ProfilePage({ userId }: { userId: string }) {
                     <ArrowLeft />
                 </Button>
                 <h1 className="text-xl font-bold">{profileUser.name}</h1>
+                 {isMyProfile && (
+                     <div className="ml-auto">
+                        {isEditing ? (
+                             <Button size="sm" onClick={handleSaveProfile} disabled={uploading}>
+                                <Save className="mr-2 h-4 w-4" /> Save
+                            </Button>
+                        ) : (
+                             <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit Profile
+                            </Button>
+                        )}
+                    </div>
+                )}
             </header>
 
             <main className="flex-1 overflow-y-auto">
@@ -261,14 +314,35 @@ export default function ProfilePage({ userId }: { userId: string }) {
                                 </>
                             )}
                         </div>
-                        <div className="flex-1 text-center md:text-left">
-                            <CardTitle className="text-3xl flex items-center gap-1.5 justify-center md:justify-start">
-                                <span>{profileUser.name}</span>
-                                {profileUser.isVerified && <VerifiedBadge className="h-7 w-7" />}
-                            </CardTitle>
+                        <div className="flex-1 text-center md:text-left space-y-2">
+                             {isEditing ? (
+                                <Input 
+                                    value={editedName} 
+                                    onChange={(e) => setEditedName(e.target.value)} 
+                                    className="text-3xl font-bold border p-2 rounded-md"
+                                />
+                             ) : (
+                                <CardTitle className="text-3xl flex items-center gap-1.5 justify-center md:justify-start">
+                                    <span>{profileUser.name}</span>
+                                    {profileUser.isVerified && <VerifiedBadge className="h-7 w-7" />}
+                                </CardTitle>
+                             )}
                             <CardDescription>{profileUser.email}</CardDescription>
-                            <p className="mt-4 text-sm text-muted-foreground max-w-prose">{profileUser.description || (isMyProfile && "No bio yet. Click here to add one.")}</p>
-                            <div className="flex justify-center md:justify-start gap-4 mt-4">
+                            
+                            {isEditing ? (
+                                <Textarea
+                                    value={editedDescription}
+                                    onChange={(e) => setEditedDescription(e.target.value)}
+                                    placeholder="Tell us about yourself..."
+                                    className="text-sm text-muted-foreground w-full max-w-prose"
+                                />
+                            ) : (
+                                 <p className="mt-4 text-sm text-muted-foreground max-w-prose">
+                                    {profileUser.description || (isMyProfile && "No bio yet.")}
+                                </p>
+                            )}
+
+                            <div className="flex justify-center md:justify-start gap-4 pt-2">
                                 <div>
                                     <p className="font-bold text-lg">{posts.length}</p>
                                     <p className="text-sm text-muted-foreground">Posts</p>
@@ -374,3 +448,5 @@ export default function ProfilePage({ userId }: { userId: string }) {
         </>
     );
 }
+
+    
