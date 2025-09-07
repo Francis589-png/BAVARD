@@ -50,6 +50,7 @@ interface Report {
         id: string;
         title: string;
         mediaUrl: string;
+        mediaType: 'image' | 'video';
     } | null;
     reportedBy_User: AppUser | null;
     postAuthor: AppUser | null;
@@ -552,12 +553,14 @@ export default function AdminPage() {
                                                 reports.map(report => (
                                                     <TableRow key={report.id}>
                                                         <TableCell>
-                                                            {report.post ? (
-                                                                <Link href="/foryou" passHref>
-                                                                    <a className="hover:underline flex items-center gap-2">
+                                                             {report.post ? (
+                                                                <Link href="/foryou" className="hover:underline flex items-center gap-2">
+                                                                    {report.post.mediaType === 'image' ? (
                                                                         <img src={report.post.mediaUrl} alt={report.post.title} className="w-10 h-10 object-cover rounded-md"/>
-                                                                        <span>{report.post.title || 'Untitled Post'}</span>
-                                                                    </a>
+                                                                    ) : (
+                                                                        <video src={report.post.mediaUrl} className="w-10 h-10 object-cover rounded-md" />
+                                                                    )}
+                                                                    <span>{report.post.title || 'Untitled Post'}</span>
                                                                 </Link>
                                                             ) : (
                                                                 <span className="text-muted-foreground">Post Deleted</span>
@@ -600,4 +603,3 @@ export default function AdminPage() {
         </div>
     );
 }
-
