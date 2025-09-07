@@ -7,7 +7,7 @@ import { collection, getDocs } from "firebase/firestore";
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
 // You can find your UID in the Firebase console under Authentication.
 const ADMIN_UIDS = [
-    'REPLACE_WITH_YOUR_FIREBASE_USER_ID'
+    'moxVcsIoAggsIf1tKpfXIMFX9nN2'
 ];
 
 /**
