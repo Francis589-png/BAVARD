@@ -3,7 +3,7 @@
 'use server';
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc, Timestamp } from "firebase/firestore";
 
 // !!! IMPORTANT SECURITY !!!
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
@@ -71,10 +71,17 @@ export async function getAppStatistics(): Promise<{
  */
 export async function getAllUsers(): Promise<any[]> {
     const usersSnapshot = await getDocs(collection(db, "users"));
-    return usersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-    }));
+    return usersSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Ensure createdAt is serializable
+        if (data.createdAt instanceof Timestamp) {
+            data.createdAt = data.createdAt.toDate().toISOString();
+        }
+        return {
+            id: doc.id,
+            ...data
+        }
+    });
 }
 
 
@@ -152,7 +159,13 @@ export async function sendBavardMessage(adminId: string, targetUserId: string, m
  */
 export async function getReports(): Promise<any[]> {
     const reportsSnapshot = await getDocs(collection(db, 'reports'));
-    const reports = reportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const reports = reportsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        if (data.createdAt instanceof Timestamp) {
+            data.createdAt = data.createdAt.toDate().toISOString();
+        }
+        return { id: doc.id, ...data };
+    });
 
     const populatedReports = await Promise.all(reports.map(async (report) => {
         const postDoc = await getDoc(doc(db, 'posts', report.postId));
@@ -181,7 +194,13 @@ export async function getReports(): Promise<any[]> {
  */
 export async function getVerificationRequests(): Promise<any[]> {
     const requestsSnapshot = await getDocs(collection(db, 'verificationRequests'));
-    const requests = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const requests = requestsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        if (data.createdAt instanceof Timestamp) {
+            data.createdAt = data.createdAt.toDate().toISOString();
+        }
+        return { id: doc.id, ...data };
+    });
 
     const populatedRequests = await Promise.all(requests.map(async (request) => {
         const userDoc = await getDoc(doc(db, 'users', request.userId));

@@ -37,10 +37,7 @@ interface AppUser {
     avatar: string;
     isBanned?: boolean;
     isVerified?: boolean;
-    createdAt?: {
-        seconds: number;
-        nanoseconds: number;
-    };
+    createdAt?: string; // Changed from timestamp object to string
 }
 
 interface Report {
@@ -48,7 +45,7 @@ interface Report {
     postId: string;
     reportedBy: string;
     reason: string;
-    createdAt: any;
+    createdAt: string; // Changed from timestamp object to string
     post: {
         id: string;
         title: string;
@@ -64,7 +61,7 @@ interface VerificationRequest {
     idPhotoUrl: string;
     selfieUrl: string;
     status: 'pending';
-    createdAt: any;
+    createdAt: string; // Changed from timestamp object to string
     user: AppUser;
 }
 
@@ -419,7 +416,7 @@ export default function AdminPage() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right text-muted-foreground hidden md:table-cell">
-                                                            {u.createdAt ? formatDistanceToNow(new Date(u.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
+                                                            {u.createdAt ? formatDistanceToNow(new Date(u.createdAt), { addSuffix: true }) : "N/A"}
                                                         </TableCell>
                                                         <TableCell className="text-right">
                                                             <DropdownMenu>
@@ -511,7 +508,7 @@ export default function AdminPage() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right text-muted-foreground">
-                                                            {req.createdAt ? formatDistanceToNow(new Date(req.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
+                                                            {req.createdAt ? formatDistanceToNow(new Date(req.createdAt), { addSuffix: true }) : "N/A"}
                                                         </TableCell>
                                                          <TableCell className="text-right">
                                                             <div className="flex gap-2 justify-end">
@@ -581,7 +578,7 @@ export default function AdminPage() {
                                                             )}
                                                         </TableCell>
                                                         <TableCell className="text-right">
-                                                            {report.createdAt ? formatDistanceToNow(report.createdAt.toDate(), { addSuffix: true }) : 'N/A'}
+                                                            {report.createdAt ? formatDistanceToNow(new Date(report.createdAt), { addSuffix: true }) : 'N/A'}
                                                         </TableCell>
                                                     </TableRow>
                                                 ))
