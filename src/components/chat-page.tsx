@@ -214,7 +214,7 @@ export default function ChatPage() {
                 const chatId = [user.uid, contact.id].sort().join('_');
                 const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
                 
-                const unsubscribeLastRead = onSnapshot(chatMemberRef, (memberDoc) => {
+                const unsubscribeLastRead = onSnapshot(doc(chatMemberRef), (memberDoc) => {
                     const lastReadTimestamp = memberDoc.data()?.lastRead || null;
                     const messagesQuery = query(
                         collection(db, 'chats', chatId, 'messages'),
@@ -433,7 +433,20 @@ export default function ChatPage() {
         
         if (isJusuAiChat) {
              setMessages(prev => [...prev, {id: 'typing', senderId: JUSU_AI_USER_ID, isTyping: true, type: 'text', timestamp: new Date() }]);
-             const aiResponse = await getAssistantResponse(userMessage);
+             
+             const chatHistory = messages
+                .filter(m => !m.isTyping && m.text) // Exclude previous typing indicators and non-text messages
+                .slice(-10) // Get last 10 messages for context
+                .map(m => ({
+                    role: m.senderId === JUSU_AI_USER_ID ? 'model' as const : 'user' as const,
+                    content: m.text || ''
+                }));
+
+             const aiResponse = await getAssistantResponse({
+                 prompt: userMessage,
+                 history: chatHistory,
+             });
+
              const aiMessageDoc = {
                 text: aiResponse,
                 senderId: JUSU_AI_USER_ID,
@@ -914,7 +927,7 @@ export default function ChatPage() {
                                 {selectedContact.isVerified && <VerifiedBadge />}
                             </h2>
                         </div>
-                        {!isJusuAiChat && (
+                        {!isJusuAiChat && !isBavardChat && (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" size="icon">
@@ -1120,5 +1133,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-  

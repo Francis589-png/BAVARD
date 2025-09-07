@@ -27,20 +27,28 @@ Your responses should be:
 - Helpful and informative.
 - Formatted with markdown for readability if the response involves lists, code, or multiple paragraphs.
 
-Here is the user's message:
-{{{prompt}}}
+Here is the recent conversation history. Use it to understand the context of the user's latest prompt.
+{{#each history}}
+{{#if (eq role 'user')}}
+User: {{{content}}}
+{{else}}
+AI: {{{content}}}
+{{/if}}
+{{/each}}
+
+User's new prompt: {{{prompt}}}
 `,
 });
 
 const assistantFlow = ai.defineFlow(
   {
     name: 'assistantFlow',
-    inputSchema: z.string(),
+    inputSchema: AssistantInputSchema,
     outputSchema: z.string(),
   },
-  async (promptText) => {
+  async (input) => {
     try {
-      const { output } = await prompt({ prompt: promptText });
+      const { output } = await prompt(input);
       return output?.response || "Sorry, I'm having trouble thinking right now. Please try again in a moment.";
     } catch (error) {
       console.error("Error in JUSU AI assistant flow:", error);
@@ -48,5 +56,3 @@ const assistantFlow = ai.defineFlow(
     }
   }
 );
-
-  
