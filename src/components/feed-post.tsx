@@ -4,12 +4,28 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind, Volume2, VolumeX } from "lucide-react";
+import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove, deleteDoc } from "firebase/firestore";
+import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind, Volume2, VolumeX, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export interface FeedPostProps {
     id: string;
@@ -26,9 +42,10 @@ export interface FeedPostProps {
     createdAt: Timestamp;
     currentUserId: string | null;
     onCommentClick: () => void;
+    onDelete: (postId: string) => void;
 }
 
-export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick }: FeedPostProps) {
+export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick, onDelete }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
@@ -36,6 +53,9 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
 
     const [isLiked, setIsLiked] = useState(currentUserId ? likes.includes(currentUserId) : false);
     const [likeCount, setLikeCount] = useState(likes.length);
+    const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+
+    const isMyPost = currentUserId === user.id;
 
     useEffect(() => {
       setIsLiked(currentUserId ? likes.includes(currentUserId) : false);
@@ -115,6 +135,19 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         toast({ title: "Link Copied!", description: "A link to this post has been copied to your clipboard." });
     };
 
+    const confirmDeletePost = async () => {
+        try {
+            await deleteDoc(doc(db, "posts", id));
+            toast({ title: "Post Deleted", description: "Your post has been successfully removed." });
+            onDelete(id);
+        } catch (error) {
+            console.error("Error deleting post:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not delete post." });
+        } finally {
+            setIsDeleteAlertOpen(false);
+        }
+    };
+
     useEffect(() => {
         const videoElement = videoRef.current;
         if (mediaType !== 'video' || !videoElement) return;
@@ -154,6 +187,7 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
 
 
     return (
+        <>
         <div className="relative h-full w-full max-w-md mx-auto rounded-lg overflow-hidden" onClick={togglePlay}>
             {mediaType === 'video' ? (
                 <video
@@ -173,11 +207,26 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                 />
             )}
             
-            <div className="absolute top-4 right-4 z-10">
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
                 <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={handleToggleMute}>
                    {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
                    <span className="sr-only">Toggle sound</span>
                 </Button>
+                {isMyPost && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={e => e.stopPropagation()}>
+                                <MoreVertical className="w-6 h-6" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent onClick={e => e.stopPropagation()}>
+                            <DropdownMenuItem className="text-destructive" onClick={() => setIsDeleteAlertOpen(true)}>
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Post
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
             </div>
 
             {mediaType === 'video' && !isPlaying && (
@@ -219,5 +268,22 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                 </div>
             </div>
         </div>
+        <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+            <AlertDialogContent onClick={e => e.stopPropagation()}>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Post?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete your post from the feed.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={confirmDeletePost} className="bg-destructive hover:bg-destructive/90">
+                        Delete
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     );
 }

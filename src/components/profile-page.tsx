@@ -7,13 +7,30 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play, Trash2, MoreVertical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
-import { doc, updateDoc, getDoc, collection, query, where, getDocs, writeBatch, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { doc, updateDoc, getDoc, collection, query, where, getDocs, writeBatch, serverTimestamp, onSnapshot, deleteDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 interface ProfileUser {
     id: string;
@@ -42,6 +59,7 @@ export default function ProfilePage({ userId }: { userId: string }) {
     const [uploading, setUploading] = useState(false);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [imageFile, setImageFile] = useState<File | null>(null);
+    const [postToDelete, setPostToDelete] = useState<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
@@ -72,11 +90,14 @@ export default function ProfilePage({ userId }: { userId: string }) {
                     toast({ variant: 'destructive', title: 'User not found' });
                 }
 
-                // Fetch user's posts
+                 // Fetch user's posts
                 const postsQuery = query(collection(db, 'posts'), where('userId', '==', userId));
-                const postsSnapshot = await getDocs(postsQuery);
-                const userPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-                setPosts(userPosts);
+                const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+                    const userPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+                    setPosts(userPosts);
+                });
+                
+                return () => unsubscribePosts();
 
             } catch (error) {
                 console.error("Error fetching profile data: ", error);
@@ -181,11 +202,24 @@ export default function ProfilePage({ userId }: { userId: string }) {
     
     const handleChat = () => {
         if (!profileUser) return;
-        // This is a simple redirect, assumes contact already exists for chat
         router.push('/chat');
-        // A more robust implementation might set the selected contact in a global state
         sessionStorage.setItem('selectedContactId', profileUser.id);
     };
+
+    const confirmDeletePost = async () => {
+        if (!postToDelete) return;
+        try {
+            await deleteDoc(doc(db, "posts", postToDelete));
+            toast({ title: "Post Deleted" });
+            // The onSnapshot listener will automatically update the UI
+        } catch (error) {
+            console.error("Error deleting post:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not delete the post." });
+        } finally {
+            setPostToDelete(null);
+        }
+    };
+
 
     if (loading || !profileUser) {
         return (
@@ -196,6 +230,7 @@ export default function ProfilePage({ userId }: { userId: string }) {
     }
 
     return (
+        <>
         <div className="flex flex-col min-h-screen bg-background">
             <header className="sticky top-0 z-10 flex items-center gap-4 border-b bg-background p-4">
                 <Button variant="ghost" size="icon" onClick={() => router.back()}>
@@ -275,12 +310,27 @@ export default function ProfilePage({ userId }: { userId: string }) {
                     {posts.length > 0 ? (
                         <div className="grid grid-cols-3 gap-1">
                             {posts.map(post => (
-                                <div key={post.id} className="relative aspect-square w-full bg-muted overflow-hidden rounded-md">
+                                <div key={post.id} className="group relative aspect-square w-full bg-muted overflow-hidden rounded-md">
                                     <Image src={post.mediaUrl} alt={post.title || ''} layout="fill" objectFit="cover" />
                                      {post.mediaType === 'video' && (
                                         <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                                             <Play className="h-8 w-8 text-white" />
                                         </div>
+                                    )}
+                                    {isMyProfile && (
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-8 w-8 text-white bg-black/30 hover:bg-black/50 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <MoreVertical className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent>
+                                                <DropdownMenuItem className="text-destructive" onClick={() => setPostToDelete(post.id)}>
+                                                    <Trash2 className="mr-2 h-4 w-4"/>
+                                                    Delete
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     )}
                                 </div>
                             ))}
@@ -291,5 +341,20 @@ export default function ProfilePage({ userId }: { userId: string }) {
                 </div>
             </main>
         </div>
+        <AlertDialog open={!!postToDelete} onOpenChange={(open) => !open && setPostToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Post?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete this post.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={confirmDeletePost} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     );
 }

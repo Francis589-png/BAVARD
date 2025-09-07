@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Search } from "lucide-react";
-import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp, limit, startAfter, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, getDocs, where, Timestamp, limit, startAfter, QueryDocumentSnapshot, DocumentData, deleteDoc, doc } from "firebase/firestore";
 import FeedPost, { FeedPostProps } from "./feed-post";
 import Link from "next/link";
 import { CommentSheet } from "./comment-sheet";
@@ -21,7 +21,7 @@ interface ChatUser {
   email: string;
 }
 
-interface Post extends Omit<FeedPostProps, 'currentUserId' | 'onCommentClick' | 'user' | 'likes'> {
+interface Post extends Omit<FeedPostProps, 'currentUserId' | 'onCommentClick' | 'user' | 'likes' | 'onDelete'> {
     userId: string;
     likes: string[];
     user: {
@@ -76,7 +76,9 @@ export default function ForYouPage() {
       } else if(lastVisible) {
           postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"), startAfter(lastVisible), limit(POSTS_PER_PAGE));
       } else {
-          return; // Should not happen
+          setLoading(false);
+          setLoadingMore(false);
+          return;
       }
 
       const postsSnapshot = await getDocs(postsQuery);
@@ -155,6 +157,10 @@ export default function ForYouPage() {
     setSelectedPostForComments(post);
     setIsCommentSheetOpen(true);
   };
+
+  const handleDeletePost = (postId: string) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  };
   
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
       const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -201,6 +207,7 @@ export default function ForYouPage() {
                   {...post} 
                   currentUserId={user?.uid || null}
                   onCommentClick={() => handleCommentClick(post)}
+                  onDelete={handleDeletePost}
                 />
               </div>
             ))}

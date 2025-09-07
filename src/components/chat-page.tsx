@@ -6,10 +6,20 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -26,7 +36,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc, setDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc, setDoc, deleteDoc } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
@@ -100,6 +110,8 @@ export default function ChatPage() {
   const [hasUnread, setHasUnread] = useState(false);
   const notificationSoundRef = useRef<HTMLAudioElement | null>(null);
   const [isNotificationPopoverOpen, setIsNotificationPopoverOpen] = useState(false);
+
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
 
 
   const router = useRouter();
@@ -603,6 +615,21 @@ export default function ChatPage() {
     return acc;
   }, [] as Partial<ChatUser>[]);
 
+  const confirmDeleteMessage = async () => {
+    if (!messageToDelete || !user || !selectedContact) return;
+    const chatId = [user.uid, selectedContact.id].sort().join('_');
+    const messageRef = doc(db, 'chats', chatId, 'messages', messageToDelete);
+    try {
+        await deleteDoc(messageRef);
+        toast({ title: 'Message Deleted' });
+    } catch (error) {
+        console.error("Error deleting message:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not delete message.' });
+    } finally {
+        setMessageToDelete(null);
+    }
+  };
+
   if (loading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -757,8 +784,12 @@ export default function ChatPage() {
                            const isMyMessage = message.senderId === user.uid;
 
                            return (
-                               <div key={message.id} className={`flex items-end gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   
+                               <div key={message.id} className={`group flex items-center gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                                   {isMyMessage && (
+                                       <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
+                                           <Trash2 className="h-4 w-4" />
+                                       </Button>
+                                   )}
                                    <div className={`rounded-lg px-4 py-2 max-w-sm ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                                        {message.type === 'text' && <p>{message.text}</p>}
                                        {message.type === 'image' && message.url && (
@@ -854,10 +885,20 @@ export default function ChatPage() {
                 onClose={() => setViewingStoryForUser(null)}
             />
         )}
+        <AlertDialog open={!!messageToDelete} onOpenChange={(open) => !open && setMessageToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete your message.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setMessageToDelete(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={confirmDeleteMessage}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     </SidebarProvider>
   );
 }
-
-    
-
-    
