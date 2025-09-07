@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus, getReports } from "@/services/admin";
-import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle, Flag } from "lucide-react";
+import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus, getReports, sendBavardMessage } from "@/services/admin";
+import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle, Flag, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -13,7 +13,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Input } from "./ui/input";
 import Link from "next/link";
 import { Button } from "./ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "./ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "./ui/badge";
@@ -21,6 +21,7 @@ import { doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { VerifiedBadge } from "./verified-badge";
+import { BavardMessageDialog } from "./bavard-message-dialog";
 
 
 interface AppStats {
@@ -91,6 +92,10 @@ export default function AdminPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [actionAlert, setActionAlert] = useState<ActionAlertState>({ isOpen: false, user: null, action: null });
+    
+    const [isBavardMessageOpen, setIsBavardMessageOpen] = useState(false);
+    const [bavardMessageUser, setBavardMessageUser] = useState<AppUser | null>(null);
+
 
     useEffect(() => {
         if (authLoading) return;
@@ -196,6 +201,22 @@ export default function AdminPage() {
         }
     };
 
+    const handleOpenBavardMessageDialog = (targetUser: AppUser) => {
+        setBavardMessageUser(targetUser);
+        setIsBavardMessageOpen(true);
+    };
+
+    const handleSendBavardMessage = async (message: string) => {
+        if (!user || !bavardMessageUser) return;
+        try {
+            await sendBavardMessage(user.uid, bavardMessageUser.id, message);
+            toast({ title: "Message Sent", description: `Official message sent to ${bavardMessageUser.name}.` });
+        } catch (error: any) {
+            console.error("Error sending Bavard message:", error);
+            toast({ variant: 'destructive', title: 'Error', description: error.message || 'Could not send the message.' });
+        }
+    };
+
 
     const filteredUsers = users.filter(u =>
         u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -244,6 +265,14 @@ export default function AdminPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            
+            <BavardMessageDialog
+                isOpen={isBavardMessageOpen}
+                onOpenChange={setIsBavardMessageOpen}
+                onSendMessage={handleSendBavardMessage}
+                userName={bavardMessageUser?.name || null}
+            />
+
 
             <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b bg-background p-4">
                 <div className="flex items-center gap-4">
@@ -367,6 +396,10 @@ export default function AdminPage() {
                                                                      <DropdownMenuItem onClick={() => handleStartChat(u)} disabled={u.id === user?.uid}>
                                                                         <MessageCircle className="mr-2 h-4 w-4" /> Message
                                                                     </DropdownMenuItem>
+                                                                     <DropdownMenuItem onClick={() => handleOpenBavardMessageDialog(u)}>
+                                                                        <Send className="mr-2 h-4 w-4" /> Message from BAVARD
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuSeparator />
                                                                     {u.isBanned ? (
                                                                         <DropdownMenuItem onClick={() => handleActionClick(u, 'unban')}>
                                                                             <XCircle className="mr-2 h-4 w-4" /> Unban

@@ -95,6 +95,8 @@ interface Notification {
     read: boolean;
 }
 
+const BAVARD_SYSTEM_UID = 'bavard_system_user';
+
 
 export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -126,7 +128,7 @@ export default function ChatPage() {
 
   const router = useRouter();
   const { toast } = useToast();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOnline = useOnlineStatus();
   const unreadListenersRef = useRef<Map<string, () => void>>(new Map());
@@ -158,6 +160,9 @@ export default function ChatPage() {
     if (contact && user) {
         sessionStorage.setItem('selectedContactId', contact.id);
         
+        // Don't mark messages as read for the read-only Bavard chat
+        if (contact.id === BAVARD_SYSTEM_UID) return;
+
         const chatId = [user.uid, contact.id].sort().join("_");
         const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
         try {
@@ -393,6 +398,7 @@ export default function ChatPage() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim() === "" || !user || !selectedContact || !isOnline) return;
+    if (selectedContact.id === BAVARD_SYSTEM_UID) return; // Prevent sending messages to Bavard
 
     const chatId = [user.uid, selectedContact.id].sort().join("_");
     const messagesCollection = collection(db, "chats", chatId, "messages");
@@ -444,6 +450,7 @@ export default function ChatPage() {
   
   const handleFileUpload = async (file: Blob, fileName?: string) => {
     if (!user || !selectedContact || !isOnline) return;
+    if (selectedContact.id === BAVARD_SYSTEM_UID) return;
     
     setUploading(true);
     const resolvedFileName = fileName || (file instanceof File ? file.name : `audio-message-${Date.now()}.webm`);
@@ -709,6 +716,8 @@ export default function ChatPage() {
     );
   }
 
+  const isBavardChat = selectedContact?.id === BAVARD_SYSTEM_UID;
+
   return (
     <SidebarProvider>
         <div className="flex h-screen bg-background text-foreground">
@@ -886,7 +895,7 @@ export default function ChatPage() {
 
                            return (
                                <div key={message.id} className={`group flex items-start gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   {isMyMessage && (
+                                   {isMyMessage && !isBavardChat && (
                                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
                                            <Trash2 className="h-4 w-4" />
                                        </Button>
@@ -923,45 +932,47 @@ export default function ChatPage() {
                        <div ref={messagesEndRef} />
                     </main>
 
-                     <footer className="p-4 border-t">
-                        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                             <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline || isRecording}>
-                                <Paperclip className="w-5 h-5" />
-                                <span className="sr-only">Attach file</span>
-                            </Button>
-                             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
-                            
-                             <Button type="button" size="icon" variant={isViewOnce ? "secondary" : "ghost"} onClick={() => setIsViewOnce(!isViewOnce)} disabled={!isOnline || isRecording}>
-                                {isViewOnce ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                <span className="sr-only">{isViewOnce ? "Disable View Once" : "Enable View Once"}</span>
-                            </Button>
-                            
-                            {isRecording ? (
-                                <div className="flex-1 flex items-center justify-center text-destructive animate-pulse">
-                                    <StopCircle className="mr-2 h-5 w-5" />
-                                    <span>Recording...</span>
-                                </div>
-                            ) : (
-                                <Input 
-                                    placeholder={isOnline ? "Type a message..." : "You are offline"}
-                                    className="flex-1"
-                                    value={newMessage}
-                                    onChange={(e) => setNewMessage(e.target.value)}
-                                    disabled={uploading || !isOnline}
-                                />
-                            )}
-                            
-                            <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
-                                {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                                <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
-                            </Button>
+                     {!isBavardChat && (
+                        <footer className="p-4 border-t">
+                            <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                                <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline || isRecording}>
+                                    <Paperclip className="w-5 h-5" />
+                                    <span className="sr-only">Attach file</span>
+                                </Button>
+                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
+                                
+                                <Button type="button" size="icon" variant={isViewOnce ? "secondary" : "ghost"} onClick={() => setIsViewOnce(!isViewOnce)} disabled={!isOnline || isRecording}>
+                                    {isViewOnce ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                    <span className="sr-only">{isViewOnce ? "Disable View Once" : "Enable View Once"}</span>
+                                </Button>
+                                
+                                {isRecording ? (
+                                    <div className="flex-1 flex items-center justify-center text-destructive animate-pulse">
+                                        <StopCircle className="mr-2 h-5 w-5" />
+                                        <span>Recording...</span>
+                                    </div>
+                                ) : (
+                                    <Input 
+                                        placeholder={isOnline ? "Type a message..." : "You are offline"}
+                                        className="flex-1"
+                                        value={newMessage}
+                                        onChange={(e) => setNewMessage(e.target.value)}
+                                        disabled={uploading || !isOnline}
+                                    />
+                                )}
+                                
+                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
+                                    {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                    <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
+                                </Button>
 
-                            <Button type="submit" size="icon" disabled={uploading || !isOnline || isRecording || newMessage.trim() === ""}>
-                                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                                <span className="sr-only">Send Message</span>
-                            </Button>
-                        </form>
-                    </footer>
+                                <Button type="submit" size="icon" disabled={uploading || !isOnline || isRecording || newMessage.trim() === ""}>
+                                    {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                                    <span className="sr-only">Send Message</span>
+                                </Button>
+                            </form>
+                        </footer>
+                     )}
                 </div>
                  ) : (
                     <div className="flex flex-col h-full items-center justify-center text-center p-4">

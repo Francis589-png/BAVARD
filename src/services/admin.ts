@@ -1,8 +1,9 @@
 
+
 'use server';
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc } from "firebase/firestore";
 
 // !!! IMPORTANT SECURITY !!!
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
@@ -10,6 +11,12 @@ import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore"
 const ADMIN_UIDS = [
     'moxVcsIoAggsIf1tKpfXIMFX9nN2'
 ];
+
+// This is a special, reserved UID for the "BAVARD" system user.
+// All official communications will come from this user.
+// In a real application, this user would be created in Firebase Auth and its UID used here.
+const BAVARD_SYSTEM_UID = 'bavard_system_user';
+
 
 /**
  * Checks if a user is an admin.
@@ -95,6 +102,48 @@ export async function updateUserStatus(
     const userRef = doc(db, "users", targetUserId);
     await updateDoc(userRef, updates);
 }
+
+/**
+ * Sends an official message from "BAVARD" to a user.
+ * This function is protected and can only be called by an admin.
+ * @param adminId The UID of the admin sending the message.
+ * @param targetUserId The UID of the user to message.
+ * @param message The text of the message to send.
+ */
+export async function sendBavardMessage(adminId: string, targetUserId: string, message: string): Promise<void> {
+    const isUserAdmin = await isAdmin(adminId);
+    if (!isUserAdmin) {
+        throw new Error("Permission denied: You must be an admin to perform this action.");
+    }
+
+    // 1. Ensure the "BAVARD" user exists in the target user's contacts
+    const bavardContactRef = doc(db, 'users', targetUserId, 'contacts', BAVARD_SYSTEM_UID);
+    const bavardContactSnap = await getDoc(bavardContactRef);
+    if (!bavardContactSnap.exists()) {
+        // We add a "user" document for Bavard as well, so it can be resolved in the chat UI
+        const bavardUserRef = doc(db, 'users', BAVARD_SYSTEM_UID);
+        await setDoc(bavardUserRef, {
+            name: "BAVARD",
+            email: "official@bavard.app",
+            avatar: "", // Or a branded avatar URL
+            isVerified: true,
+        }, { merge: true });
+
+        await setDoc(bavardContactRef, { addedAt: serverTimestamp() });
+    }
+
+    // 2. Add the message to the chat
+    const chatId = [targetUserId, BAVARD_SYSTEM_UID].sort().join('_');
+    const messagesCollection = collection(db, 'chats', chatId, 'messages');
+    
+    await addDoc(messagesCollection, {
+        senderId: BAVARD_SYSTEM_UID,
+        text: message,
+        timestamp: serverTimestamp(),
+        type: 'text',
+    });
+}
+
 
 /**
  * Fetches all reports from the database.
