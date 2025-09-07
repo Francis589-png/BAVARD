@@ -2,7 +2,7 @@
 'use server';
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 
 // !!! IMPORTANT SECURITY !!!
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
@@ -94,4 +94,33 @@ export async function updateUserStatus(
 
     const userRef = doc(db, "users", targetUserId);
     await updateDoc(userRef, updates);
+}
+
+/**
+ * Fetches all reports from the database.
+ * This function should only be callable by admins.
+ * @returns An array of all report objects, enriched with post and user details.
+ */
+export async function getReports(): Promise<any[]> {
+    const reportsSnapshot = await getDocs(collection(db, 'reports'));
+    const reports = reportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const populatedReports = await Promise.all(reports.map(async (report) => {
+        const postDoc = await getDoc(doc(db, 'posts', report.postId));
+        const reportedByUserDoc = await getDoc(doc(db, 'users', report.reportedBy));
+        
+        let postAuthorDoc: any = null;
+        if (postDoc.exists()) {
+            postAuthorDoc = await getDoc(doc(db, 'users', postDoc.data()!.userId));
+        }
+
+        return {
+            ...report,
+            post: postDoc.exists() ? { id: postDoc.id, ...postDoc.data() } : null,
+            reportedBy_User: reportedByUserDoc.exists() ? { id: reportedByUserDoc.id, ...reportedByUserDoc.data() } : null,
+            postAuthor: postAuthorDoc && postAuthorDoc.exists() ? { id: postAuthorDoc.id, ...postAuthorDoc.data() } : null,
+        };
+    }));
+
+    return populatedReports;
 }

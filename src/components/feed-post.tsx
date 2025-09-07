@@ -4,8 +4,8 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove, deleteDoc } from "firebase/firestore";
-import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind, Volume2, VolumeX, MoreVertical, Trash2 } from "lucide-react";
+import { Timestamp, doc, updateDoc, arrayUnion, arrayRemove, deleteDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { Heart, MessageCircle, Share2, Play, Pause, FastForward, Rewind, Volume2, VolumeX, MoreVertical, Trash2, Flag } from "lucide-react";
 import { Button } from "./ui/button";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
@@ -151,6 +152,26 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
         }
     };
 
+     const handleReportPost = async () => {
+        if (!currentUserId) {
+            toast({ title: "Please log in", description: "You must be logged in to report a post." });
+            return;
+        }
+        try {
+            const reportsCollection = collection(db, 'reports');
+            await addDoc(reportsCollection, {
+                postId: id,
+                reportedBy: currentUserId,
+                createdAt: serverTimestamp(),
+                reason: "Inappropriate Content", // Placeholder reason
+            });
+            toast({ title: "Post Reported", description: "Thank you for your feedback. An admin will review this post." });
+        } catch (error) {
+            console.error("Error reporting post:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not report post. Please try again." });
+        }
+    };
+
     useEffect(() => {
         const videoElement = videoRef.current;
         if (mediaType !== 'video' || !videoElement) return;
@@ -215,21 +236,28 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                    {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
                    <span className="sr-only">Toggle sound</span>
                 </Button>
-                {isMyPost && (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={e => e.stopPropagation()}>
-                                <MoreVertical className="w-6 h-6" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent onClick={e => e.stopPropagation()}>
+                
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" onClick={e => e.stopPropagation()}>
+                            <MoreVertical className="w-6 h-6" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent onClick={e => e.stopPropagation()}>
+                        {isMyPost ? (
                             <DropdownMenuItem className="text-destructive" onClick={() => setIsDeleteAlertOpen(true)}>
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete Post
                             </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                )}
+                        ) : (
+                            <DropdownMenuItem className="text-destructive" onClick={handleReportPost}>
+                                <Flag className="mr-2 h-4 w-4" />
+                                Report Post
+                            </DropdownMenuItem>
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
             </div>
 
             {mediaType === 'video' && !isPlaying && (

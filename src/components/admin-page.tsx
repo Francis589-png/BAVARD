@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus } from "@/services/admin";
-import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle } from "lucide-react";
+import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus, getReports } from "@/services/admin";
+import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle, Flag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "./ui/badge";
 import { doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 
 interface AppStats {
@@ -39,6 +40,22 @@ interface AppUser {
         nanoseconds: number;
     };
 }
+
+interface Report {
+    id: string;
+    postId: string;
+    reportedBy: string;
+    reason: string;
+    createdAt: any;
+    post: {
+        id: string;
+        title: string;
+        mediaUrl: string;
+    } | null;
+    reportedBy_User: AppUser | null;
+    postAuthor: AppUser | null;
+}
+
 
 type ActionType = "ban" | "unban" | "verify" | "unverify";
 
@@ -69,6 +86,7 @@ export default function AdminPage() {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<AppStats | null>(null);
     const [users, setUsers] = useState<AppUser[]>([]);
+    const [reports, setReports] = useState<Report[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [actionAlert, setActionAlert] = useState<ActionAlertState>({ isOpen: false, user: null, action: null });
@@ -96,12 +114,14 @@ export default function AdminPage() {
     const fetchAdminData = async () => {
         try {
             setLoading(true);
-            const [fetchedStats, fetchedUsers] = await Promise.all([
+            const [fetchedStats, fetchedUsers, fetchedReports] = await Promise.all([
                 getAppStatistics(),
-                getAllUsers()
+                getAllUsers(),
+                getReports()
             ]);
             setStats(fetchedStats);
             setUsers(fetchedUsers as AppUser[]);
+            setReports(fetchedReports as Report[]);
         } catch (error) {
             console.error("Failed to fetch admin data", error);
             toast({ variant: 'destructive', title: 'Error', description: 'Failed to load admin data.' });
@@ -236,7 +256,7 @@ export default function AdminPage() {
             </header>
 
             <main className="p-4 md:p-6 space-y-6">
-                <div className="grid gap-4 md:grid-cols-3">
+                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -257,111 +277,190 @@ export default function AdminPage() {
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Total Storage Used</CardTitle>
+                            <CardTitle className="text-sm font-medium">Reports</CardTitle>
+                            <Flag className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{reports.length}</div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Storage Used</CardTitle>
                             <HardDrive className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{formatBytes(stats?.totalStorageBytes ?? 0)}</div>
-                            <p className="text-xs text-muted-foreground">of {formatBytes(MAX_STORAGE_BYTES)} total</p>
+                            <p className="text-xs text-muted-foreground">of {formatBytes(MAX_STORAGE_BYTES)}</p>
                         </CardContent>
                     </Card>
                 </div>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>User Management</CardTitle>
-                        <div className="relative mt-2">
-                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                             <Input 
-                                placeholder="Search users..."
-                                className="pl-9"
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                             />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="border rounded-lg">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>User</TableHead>
-                                        <TableHead className="hidden md:table-cell">Status</TableHead>
-                                        <TableHead className="text-right hidden md:table-cell">Joined</TableHead>
-                                        <TableHead className="text-right">Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredUsers.length > 0 ? (
-                                        filteredUsers.map(u => (
-                                            <TableRow key={u.id}>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-3">
-                                                        <Avatar>
-                                                            <AvatarImage src={u.avatar} />
-                                                            <AvatarFallback>{u.name?.[0]}</AvatarFallback>
-                                                        </Avatar>
-                                                        <div>
-                                                            <div className="font-medium">{u.name}</div>
-                                                            <div className="text-sm text-muted-foreground">{u.email}</div>
-                                                        </div>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="hidden md:table-cell">
-                                                    <div className="flex items-center gap-2">
-                                                        {u.isBanned && <Badge variant="destructive">Banned</Badge>}
-                                                        {u.isVerified && <Badge variant="secondary" className="text-blue-500 border-blue-500">Verified</Badge>}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-right text-muted-foreground hidden md:table-cell">
-                                                    {u.createdAt ? formatDistanceToNow(new Date(u.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" disabled={isSubmitting}>
-                                                                <MoreVertical className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent>
-                                                             <DropdownMenuItem onClick={() => handleStartChat(u)} disabled={u.id === user?.uid}>
-                                                                <MessageCircle className="mr-2 h-4 w-4" /> Message
-                                                            </DropdownMenuItem>
-                                                            {u.isBanned ? (
-                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'unban')}>
-                                                                    <XCircle className="mr-2 h-4 w-4" /> Unban
-                                                                </DropdownMenuItem>
-                                                            ) : (
-                                                                <DropdownMenuItem className="text-destructive" onClick={() => handleActionClick(u, 'ban')}>
-                                                                    <Ban className="mr-2 h-4 w-4" /> Ban
-                                                                </DropdownMenuItem>
-                                                            )}
-                                                            {u.isVerified ? (
-                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'unverify')}>
-                                                                    <XCircle className="mr-2 h-4 w-4" /> Unverify
-                                                                </DropdownMenuItem>
-                                                            ) : (
-                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'verify')}>
-                                                                    <CheckCircle className="mr-2 h-4 w-4" /> Verify
-                                                                </DropdownMenuItem>
-                                                            )}
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </TableCell>
+                
+                <Tabs defaultValue="users">
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="users">User Management</TabsTrigger>
+                        <TabsTrigger value="reports">Content Reports</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="users">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>User Management</CardTitle>
+                                <div className="relative mt-2">
+                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                     <Input 
+                                        placeholder="Search users..."
+                                        className="pl-9"
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                     />
+                                </div>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="border rounded-lg">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>User</TableHead>
+                                                <TableHead className="hidden md:table-cell">Status</TableHead>
+                                                <TableHead className="text-right hidden md:table-cell">Joined</TableHead>
+                                                <TableHead className="text-right">Actions</TableHead>
                                             </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="h-24 text-center">
-                                                No users found.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredUsers.length > 0 ? (
+                                                filteredUsers.map(u => (
+                                                    <TableRow key={u.id}>
+                                                        <TableCell>
+                                                            <div className="flex items-center gap-3">
+                                                                <Avatar>
+                                                                    <AvatarImage src={u.avatar} />
+                                                                    <AvatarFallback>{u.name?.[0]}</AvatarFallback>
+                                                                </Avatar>
+                                                                <div>
+                                                                    <div className="font-medium">{u.name}</div>
+                                                                    <div className="text-sm text-muted-foreground">{u.email}</div>
+                                                                </div>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="hidden md:table-cell">
+                                                            <div className="flex items-center gap-2">
+                                                                {u.isBanned && <Badge variant="destructive">Banned</Badge>}
+                                                                {u.isVerified && <Badge variant="secondary" className="text-blue-500 border-blue-500">Verified</Badge>}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right text-muted-foreground hidden md:table-cell">
+                                                            {u.createdAt ? formatDistanceToNow(new Date(u.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button variant="ghost" size="icon" disabled={isSubmitting}>
+                                                                        <MoreVertical className="h-4 w-4" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent>
+                                                                     <DropdownMenuItem onClick={() => handleStartChat(u)} disabled={u.id === user?.uid}>
+                                                                        <MessageCircle className="mr-2 h-4 w-4" /> Message
+                                                                    </DropdownMenuItem>
+                                                                    {u.isBanned ? (
+                                                                        <DropdownMenuItem onClick={() => handleActionClick(u, 'unban')}>
+                                                                            <XCircle className="mr-2 h-4 w-4" /> Unban
+                                                                        </DropdownMenuItem>
+                                                                    ) : (
+                                                                        <DropdownMenuItem className="text-destructive" onClick={() => handleActionClick(u, 'ban')}>
+                                                                            <Ban className="mr-2 h-4 w-4" /> Ban
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                    {u.isVerified ? (
+                                                                        <DropdownMenuItem onClick={() => handleActionClick(u, 'unverify')}>
+                                                                            <XCircle className="mr-2 h-4 w-4" /> Unverify
+                                                                        </DropdownMenuItem>
+                                                                    ) : (
+                                                                        <DropdownMenuItem onClick={() => handleActionClick(u, 'verify')}>
+                                                                            <CheckCircle className="mr-2 h-4 w-4" /> Verify
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="h-24 text-center">
+                                                        No users found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                    <TabsContent value="reports">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Content Reports</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="border rounded-lg">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Reported Post</TableHead>
+                                                <TableHead>Post Author</TableHead>
+                                                <TableHead>Reported By</TableHead>
+                                                <TableHead className="text-right">Date</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {reports.length > 0 ? (
+                                                reports.map(report => (
+                                                    <TableRow key={report.id}>
+                                                        <TableCell>
+                                                            {report.post ? (
+                                                                <a href={`/post/${report.postId}`} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-2">
+                                                                     <img src={report.post.mediaUrl} alt={report.post.title} className="w-10 h-10 object-cover rounded-md"/>
+                                                                    <span>{report.post.title || 'Untitled Post'}</span>
+                                                                </a>
+                                                            ) : (
+                                                                <span className="text-muted-foreground">Post Deleted</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {report.postAuthor ? (
+                                                                <Link href={`/profile/${report.postAuthor.id}`} className="hover:underline">{report.postAuthor.name}</Link>
+                                                            ) : (
+                                                                <span className="text-muted-foreground">User Deleted</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {report.reportedBy_User ? (
+                                                                <Link href={`/profile/${report.reportedBy_User.id}`} className="hover:underline">{report.reportedBy_User.name}</Link>
+                                                            ) : (
+                                                                <span className="text-muted-foreground">User Deleted</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {report.createdAt ? formatDistanceToNow(report.createdAt.toDate(), { addSuffix: true }) : 'N/A'}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="h-24 text-center">
+                                                        No reports found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                </Tabs>
             </main>
         </div>
     );
