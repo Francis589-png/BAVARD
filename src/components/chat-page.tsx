@@ -154,20 +154,6 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [router]);
-  
-  const requestMicPermission = useCallback(async () => {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setHasMicPermission(true);
-        // Important: Stop the tracks immediately after getting permission
-        // to release the microphone. We only wanted the prompt.
-        stream.getTracks().forEach(track => track.stop());
-    } catch (error) {
-        console.error("Microphone permission denied:", error);
-        setHasMicPermission(false);
-    }
-  }, []);
-
 
   const selectContact = useCallback(async (contact: ChatUser | null) => {
     setSelectedContact(contact);
@@ -540,38 +526,30 @@ export default function ChatPage() {
   };
 
   const handleStartRecording = async () => {
-    if (isRecording || hasMicPermission === false) {
-      if (hasMicPermission === false) {
-          toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser settings." });
-      }
-      return;
-    }
+    if (isRecording) return;
     
-    if (hasMicPermission === null) {
-        await requestMicPermission();
-        // If permission is now granted, we can proceed. If not, the state will be false and this function will exit on next call.
-        if (!hasMicPermission) return;
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      
-      mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
-        audioChunksRef.current.push(event.data);
-      });
-      
-      mediaRecorderRef.current.addEventListener("stop", async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
-        // Stop all media tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
-      });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasMicPermission(true);
 
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      toast({ title: "Recording Started", description: "Press the button again to stop." });
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+        
+        mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
+            audioChunksRef.current.push(event.data);
+        });
+        
+        mediaRecorderRef.current.addEventListener("stop", async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
+            // Stop all media tracks to release microphone
+            stream.getTracks().forEach(track => track.stop());
+        });
+
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+        toast({ title: "Recording Started", description: "Press the button again to stop." });
+
     } catch (error) {
       console.error("Error starting recording:", error);
       toast({ variant: "destructive", title: "Recording Error", description: "Could not start recording. Please ensure you have given microphone permissions." });
@@ -921,18 +899,8 @@ export default function ChatPage() {
                             <Alert>
                                 <MicOff className="h-4 w-4" />
                                 <AlertTitle>Microphone Access Denied</AlertTitle>
-                                <AlertDescription className="flex flex-col gap-2">
-                                    <span>To send voice messages, please enable microphone permissions in your browser settings.</span>
-                                </AlertDescription>
-                            </Alert>
-                        )}
-                         {hasMicPermission === null && (
-                            <Alert>
-                                <MicOff className="h-4 w-4" />
-                                <AlertTitle>Microphone Permission Needed</AlertTitle>
-                                <AlertDescription className="flex flex-col gap-2 mt-2">
-                                    <span>To send voice messages, this app needs access to your microphone.</span>
-                                    <Button onClick={requestMicPermission} size="sm" className="w-fit">Request Permission</Button>
+                                <AlertDescription>
+                                    To send voice messages, please enable microphone permissions in your browser settings.
                                 </AlertDescription>
                             </Alert>
                         )}
