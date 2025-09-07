@@ -907,7 +907,7 @@ export default function ChatPage() {
                                                     </a>
                                                 )}
                                                 {message.type === 'audio' && message.url && (
-                                                    <audio controls src={message.url} className="max-w-full">
+                                                    <audio key={message.url} controls src={message.url} className="max-w-full">
                                                             Your browser does not support the audio element.
                                                     </audio>
                                                 )}
