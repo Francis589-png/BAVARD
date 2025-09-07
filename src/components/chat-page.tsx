@@ -99,6 +99,8 @@ export default function ChatPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
   const notificationSoundRef = useRef<HTMLAudioElement | null>(null);
+  const [isNotificationPopoverOpen, setIsNotificationPopoverOpen] = useState(false);
+
 
   const router = useRouter();
   const { toast } = useToast();
@@ -584,6 +586,15 @@ export default function ChatPage() {
     });
     await batch.commit();
   }
+
+  const handleNotificationClick = (notification: Notification) => {
+    const contact = contacts.find(c => c.id === notification.senderId);
+    if (contact) {
+      selectContact(contact);
+    }
+    // Close the popover after clicking
+    setIsNotificationPopoverOpen(false);
+  };
   
   const storyUsers = stories.reduce((acc, story) => {
     if (!acc.find(u => u.id === story.userId)) {
@@ -613,7 +624,7 @@ export default function ChatPage() {
                 <SidebarContent>
                     <SidebarGroup>
                        <SidebarGroupLabel>Actions</SidebarGroupLabel>
-                        <Popover onOpenChange={(isOpen) => { if (!isOpen) markNotificationsAsRead() }}>
+                        <Popover open={isNotificationPopoverOpen} onOpenChange={(isOpen) => { setIsNotificationPopoverOpen(isOpen); if (!isOpen) markNotificationsAsRead() }}>
                             <PopoverTrigger asChild>
                                 <Button variant="ghost" size="sm" className="w-full justify-start relative">
                                     <Bell className="mr-2 h-4 w-4" />
@@ -626,7 +637,7 @@ export default function ChatPage() {
                                     <h4 className="font-medium leading-none">Notifications</h4>
                                     <div className="space-y-1">
                                         {notifications.length > 0 ? notifications.map(n => (
-                                            <div key={n.id} className={`p-2 rounded-md ${!n.read ? 'bg-primary/10' : ''}`}>
+                                            <div key={n.id} className={`p-2 rounded-md cursor-pointer hover:bg-accent ${!n.read ? 'bg-primary/10' : ''}`} onClick={() => handleNotificationClick(n)}>
                                                 <p className="text-sm font-medium">New Message</p>
                                                 <p className="text-sm text-muted-foreground">From: {n.senderName}</p>
                                                 <p className="text-xs text-muted-foreground/80 mt-1">
@@ -846,5 +857,7 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
 
     
