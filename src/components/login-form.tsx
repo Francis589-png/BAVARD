@@ -72,6 +72,17 @@ function GoogleIcon() {
   );
 }
 
+const checkUserStatus = async (user: User) => {
+    const userRef = doc(db, "users", user.uid);
+    const userDoc = await getDoc(userRef);
+
+    if (userDoc.exists() && userDoc.data()?.isBanned) {
+        await auth.signOut(); // Ensure the user is logged out on the client
+        throw new Error("This account has been banned.");
+    }
+    return userDoc;
+};
+
 const addUserToFirestore = async (user: User) => {
     const userRef = doc(db, "users", user.uid);
     const userDoc = await getDoc(userRef);
@@ -83,6 +94,8 @@ const addUserToFirestore = async (user: User) => {
         avatar: user.photoURL,
         online: true,
         createdAt: serverTimestamp(),
+        isBanned: false,
+        isVerified: false,
       });
     }
 };
@@ -115,11 +128,12 @@ function LoginFormComponent() {
     setIsLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
+      await checkUserStatus(userCredential.user);
       await addUserToFirestore(userCredential.user);
       toast({ title: "Success", description: "Signed in successfully." });
       router.push(getRedirectPath());
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Invalid email or password." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message || "Invalid email or password." });
       console.error(error);
     } finally {
         setIsLoading(false);
@@ -159,11 +173,12 @@ function LoginFormComponent() {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
+      await checkUserStatus(result.user);
       await addUserToFirestore(result.user);
       toast({ title: "Success", description: "Signed in successfully with Google." });
       router.push(getRedirectPath());
-    } catch (error) {
-       toast({ variant: "destructive", title: "Error", description: "Could not sign in with Google. Please try again." });
+    } catch (error: any) {
+       toast({ variant: "destructive", title: "Error", description: error.message || "Could not sign in with Google. Please try again." });
        console.error("Google Sign-In Error:", error);
     } finally {
         setIsLoading(false);

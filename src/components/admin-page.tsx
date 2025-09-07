@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { isAdmin, getAppStatistics, getAllUsers } from "@/services/admin";
-import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search } from "lucide-react";
+import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus } from "@/services/admin";
+import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -13,6 +13,11 @@ import { formatDistanceToNow } from "date-fns";
 import { Input } from "./ui/input";
 import Link from "next/link";
 import { Button } from "./ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Badge } from "./ui/badge";
+
 
 interface AppStats {
     totalUsers: number;
@@ -25,10 +30,20 @@ interface AppUser {
     name: string;
     email: string;
     avatar: string;
+    isBanned?: boolean;
+    isVerified?: boolean;
     createdAt?: {
         seconds: number;
         nanoseconds: number;
     };
+}
+
+type ActionType = "ban" | "unban" | "verify" | "unverify";
+
+interface ActionAlertState {
+    isOpen: boolean;
+    user: AppUser | null;
+    action: ActionType | null;
 }
 
 const MAX_STORAGE_BYTES = 20 * 1024 * 1024 * 1024;
@@ -46,12 +61,15 @@ const formatBytes = (bytes: number, decimals = 2) => {
 export default function AdminPage() {
     const { user, loading: authLoading } = useAuth();
     const router = useRouter();
+    const { toast } = useToast();
 
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<AppStats | null>(null);
     const [users, setUsers] = useState<AppUser[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [actionAlert, setActionAlert] = useState<ActionAlertState>({ isOpen: false, user: null, action: null });
 
     useEffect(() => {
         if (authLoading) return;
@@ -75,18 +93,56 @@ export default function AdminPage() {
 
     const fetchAdminData = async () => {
         try {
+            setLoading(true);
             const [fetchedStats, fetchedUsers] = await Promise.all([
                 getAppStatistics(),
                 getAllUsers()
             ]);
             setStats(fetchedStats);
-            setUsers(fetchedUsers);
+            setUsers(fetchedUsers as AppUser[]);
         } catch (error) {
             console.error("Failed to fetch admin data", error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Failed to load admin data.' });
         } finally {
             setLoading(false);
         }
     };
+    
+    const handleActionClick = (user: AppUser, action: ActionType) => {
+        setActionAlert({ isOpen: true, user, action });
+    };
+    
+    const handleConfirmAction = async () => {
+        if (!actionAlert.user || !actionAlert.action || !user) return;
+        
+        setIsSubmitting(true);
+        const { user: targetUser, action } = actionAlert;
+
+        try {
+            const updates: Partial<AppUser> = {};
+            if (action === 'ban') updates.isBanned = true;
+            if (action === 'unban') updates.isBanned = false;
+            if (action === 'verify') updates.isVerified = true;
+            if (action === 'unverify') updates.isVerified = false;
+
+            await updateUserStatus(user.uid, targetUser.id, updates);
+            
+            toast({ title: 'Success', description: `User ${targetUser.name} has been ${action}ned.` });
+            
+            // Update local state to reflect change immediately
+            setUsers(prevUsers => prevUsers.map(u => 
+                u.id === targetUser.id ? { ...u, ...updates } : u
+            ));
+
+        } catch (error) {
+            console.error(`Failed to ${action} user:`, error);
+            toast({ variant: 'destructive', title: 'Error', description: `Could not ${action} user. Please try again.` });
+        } finally {
+            setIsSubmitting(false);
+            setActionAlert({ isOpen: false, user: null, action: null });
+        }
+    };
+
 
     const filteredUsers = users.filter(u =>
         u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -115,6 +171,27 @@ export default function AdminPage() {
 
     return (
         <div className="min-h-screen bg-secondary">
+             <AlertDialog open={actionAlert.isOpen} onOpenChange={(isOpen) => !isOpen && setActionAlert({ isOpen: false, user: null, action: null })}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action will {actionAlert.action} the user {actionAlert.user?.name}.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={handleConfirmAction} 
+                            disabled={isSubmitting}
+                            className={actionAlert.action === 'ban' || actionAlert.action === 'unverify' ? "bg-destructive hover:bg-destructive/90" : ""}
+                        >
+                            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Confirm'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
             <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b bg-background p-4">
                 <div className="flex items-center gap-4">
                     <Link href="/chat" passHref>
@@ -177,9 +254,9 @@ export default function AdminPage() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>User</TableHead>
-                                        <TableHead className="hidden md:table-cell">Email</TableHead>
-                                        <TableHead className="hidden lg:table-cell">UID</TableHead>
-                                        <TableHead className="text-right">Joined</TableHead>
+                                        <TableHead className="hidden md:table-cell">Status</TableHead>
+                                        <TableHead className="text-right hidden md:table-cell">Joined</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -192,13 +269,49 @@ export default function AdminPage() {
                                                             <AvatarImage src={u.avatar} />
                                                             <AvatarFallback>{u.name?.[0]}</AvatarFallback>
                                                         </Avatar>
-                                                        <span className="font-medium">{u.name}</span>
+                                                        <div>
+                                                            <div className="font-medium">{u.name}</div>
+                                                            <div className="text-sm text-muted-foreground">{u.email}</div>
+                                                        </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="hidden md:table-cell">{u.email}</TableCell>
-                                                <TableCell className="hidden lg:table-cell text-muted-foreground">{u.id}</TableCell>
-                                                <TableCell className="text-right text-muted-foreground">
+                                                <TableCell className="hidden md:table-cell">
+                                                    <div className="flex items-center gap-2">
+                                                        {u.isBanned && <Badge variant="destructive">Banned</Badge>}
+                                                        {u.isVerified && <Badge variant="secondary" className="text-blue-500 border-blue-500">Verified</Badge>}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-right text-muted-foreground hidden md:table-cell">
                                                     {u.createdAt ? formatDistanceToNow(new Date(u.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon">
+                                                                <MoreVertical className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent>
+                                                            {u.isBanned ? (
+                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'unban')}>
+                                                                    <XCircle className="mr-2 h-4 w-4" /> Unban
+                                                                </DropdownMenuItem>
+                                                            ) : (
+                                                                <DropdownMenuItem className="text-destructive" onClick={() => handleActionClick(u, 'ban')}>
+                                                                    <Ban className="mr-2 h-4 w-4" /> Ban
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {u.isVerified ? (
+                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'unverify')}>
+                                                                    <XCircle className="mr-2 h-4 w-4" /> Unverify
+                                                                </DropdownMenuItem>
+                                                            ) : (
+                                                                <DropdownMenuItem onClick={() => handleActionClick(u, 'verify')}>
+                                                                    <CheckCircle className="mr-2 h-4 w-4" /> Verify
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </TableCell>
                                             </TableRow>
                                         ))
