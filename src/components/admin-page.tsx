@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus, getReports, sendBavardMessage } from "@/services/admin";
-import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle, Flag, Send } from "lucide-react";
+import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus, getReports, sendBavardMessage, getVerificationRequests, processVerificationRequest } from "@/services/admin";
+import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle, Flag, Send, FileCheck2, UserCheck, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -58,6 +58,16 @@ interface Report {
     postAuthor: AppUser | null;
 }
 
+interface VerificationRequest {
+    id: string;
+    userId: string;
+    idPhotoUrl: string;
+    selfieUrl: string;
+    status: 'pending';
+    createdAt: any;
+    user: AppUser;
+}
+
 
 type ActionType = "ban" | "unban" | "verify" | "unverify";
 
@@ -89,6 +99,7 @@ export default function AdminPage() {
     const [stats, setStats] = useState<AppStats | null>(null);
     const [users, setUsers] = useState<AppUser[]>([]);
     const [reports, setReports] = useState<Report[]>([]);
+    const [verificationRequests, setVerificationRequests] = useState<VerificationRequest[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [actionAlert, setActionAlert] = useState<ActionAlertState>({ isOpen: false, user: null, action: null });
@@ -120,14 +131,16 @@ export default function AdminPage() {
     const fetchAdminData = async () => {
         try {
             setLoading(true);
-            const [fetchedStats, fetchedUsers, fetchedReports] = await Promise.all([
+            const [fetchedStats, fetchedUsers, fetchedReports, fetchedRequests] = await Promise.all([
                 getAppStatistics(),
                 getAllUsers(),
-                getReports()
+                getReports(),
+                getVerificationRequests(),
             ]);
             setStats(fetchedStats);
             setUsers(fetchedUsers as AppUser[]);
             setReports(fetchedReports as Report[]);
+            setVerificationRequests(fetchedRequests as VerificationRequest[]);
         } catch (error) {
             console.error("Failed to fetch admin data", error);
             toast({ variant: 'destructive', title: 'Error', description: 'Failed to load admin data.' });
@@ -171,6 +184,28 @@ export default function AdminPage() {
         }
     };
     
+    const handleProcessRequest = async (request: VerificationRequest, status: 'approve' | 'reject') => {
+        if (!user) return;
+        
+        setIsSubmitting(true);
+        try {
+            await processVerificationRequest(user.uid, request.userId, status);
+            toast({ title: "Success", description: `Request for ${request.user.name} has been ${status}d.`});
+            
+            // Optimistically update UI
+            setVerificationRequests(prev => prev.filter(r => r.id !== request.id));
+            if (status === 'approve') {
+                setUsers(prev => prev.map(u => u.id === request.userId ? {...u, isVerified: true} : u));
+            }
+
+        } catch (error) {
+            console.error("Failed to process request:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not process the request."});
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleStartChat = async (targetUser: AppUser) => {
         if (!user) return;
         setIsSubmitting(true);
@@ -298,11 +333,11 @@ export default function AdminPage() {
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Total Posts</CardTitle>
-                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-sm font-medium">Verification Requests</CardTitle>
+                             <FileCheck2 className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{stats?.totalPosts ?? 0}</div>
+                            <div className="text-2xl font-bold">{verificationRequests.length}</div>
                         </CardContent>
                     </Card>
                     <Card>
@@ -327,8 +362,9 @@ export default function AdminPage() {
                 </div>
                 
                 <Tabs defaultValue="users">
-                    <TabsList className="grid w-full grid-cols-2">
+                    <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="users">User Management</TabsTrigger>
+                        <TabsTrigger value="requests">Verification Requests</TabsTrigger>
                         <TabsTrigger value="reports">Content Reports</TabsTrigger>
                     </TabsList>
                     <TabsContent value="users">
@@ -367,7 +403,7 @@ export default function AdminPage() {
                                                                     <AvatarFallback>{u.name?.[0]}</AvatarFallback>
                                                                 </Avatar>
                                                                 <div>
-                                                                    <div className="font-medium flex items-center gap-1">
+                                                                    <div className="font-medium flex items-center gap-1.5">
                                                                         <span>{u.name}</span>
                                                                         {u.isVerified && <VerifiedBadge />}
                                                                     </div>
@@ -427,6 +463,68 @@ export default function AdminPage() {
                                                 <TableRow>
                                                     <TableCell colSpan={4} className="h-24 text-center">
                                                         No users found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                    <TabsContent value="requests">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Verification Requests</CardTitle>
+                            </CardHeader>
+                             <CardContent>
+                                <div className="border rounded-lg">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>User</TableHead>
+                                                <TableHead>Documents</TableHead>
+                                                <TableHead className="text-right">Date</TableHead>
+                                                <TableHead className="text-right">Actions</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {verificationRequests.length > 0 ? (
+                                                verificationRequests.map(req => (
+                                                    <TableRow key={req.id}>
+                                                        <TableCell>
+                                                            <Link href={`/profile/${req.user.id}`} className="flex items-center gap-3 hover:underline">
+                                                                <Avatar>
+                                                                    <AvatarImage src={req.user.avatar} />
+                                                                    <AvatarFallback>{req.user.name?.[0]}</AvatarFallback>
+                                                                </Avatar>
+                                                                <div>
+                                                                    <div className="font-medium">{req.user.name}</div>
+                                                                    <div className="text-sm text-muted-foreground">{req.user.email}</div>
+                                                                </div>
+                                                            </Link>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex gap-2">
+                                                                <a href={req.idPhotoUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" size="sm">ID Photo <ExternalLink className="ml-2 h-3 w-3"/></Button></a>
+                                                                <a href={req.selfieUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" size="sm">Selfie <ExternalLink className="ml-2 h-3 w-3"/></Button></a>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right text-muted-foreground">
+                                                            {req.createdAt ? formatDistanceToNow(new Date(req.createdAt.seconds * 1000), { addSuffix: true }) : "N/A"}
+                                                        </TableCell>
+                                                         <TableCell className="text-right">
+                                                            <div className="flex gap-2 justify-end">
+                                                                <Button size="sm" variant="destructive" onClick={() => handleProcessRequest(req, 'reject')} disabled={isSubmitting}>Reject</Button>
+                                                                <Button size="sm" onClick={() => handleProcessRequest(req, 'approve')} disabled={isSubmitting}>Approve</Button>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="h-24 text-center">
+                                                        No pending verification requests.
                                                     </TableCell>
                                                 </TableRow>
                                             )}
@@ -505,3 +603,4 @@ export default function AdminPage() {
         </div>
     );
 }
+

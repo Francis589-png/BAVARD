@@ -3,7 +3,7 @@
 'use server';
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
 
 // !!! IMPORTANT SECURITY !!!
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
@@ -172,4 +172,48 @@ export async function getReports(): Promise<any[]> {
     }));
 
     return populatedReports;
+}
+
+
+/**
+ * Fetches all pending verification requests from the database.
+ * @returns An array of request objects, enriched with user details.
+ */
+export async function getVerificationRequests(): Promise<any[]> {
+    const requestsSnapshot = await getDocs(collection(db, 'verificationRequests'));
+    const requests = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const populatedRequests = await Promise.all(requests.map(async (request) => {
+        const userDoc = await getDoc(doc(db, 'users', request.userId));
+        return {
+            ...request,
+            user: userDoc.exists() ? { id: userDoc.id, ...userDoc.data() } : null,
+        };
+    }));
+    
+    // Filter out any requests where the user might have been deleted
+    return populatedRequests.filter(req => req.user);
+}
+
+/**
+ * Processes a verification request by approving or rejecting it.
+ * @param adminId The UID of the admin performing the action.
+ * @param targetUserId The UID of the user whose request is being processed.
+ * @param action The action to perform: 'approve' or 'reject'.
+ */
+export async function processVerificationRequest(adminId: string, targetUserId: string, action: 'approve' | 'reject'): Promise<void> {
+    const isUserAdmin = await isAdmin(adminId);
+    if (!isUserAdmin) {
+        throw new Error("Permission denied: You must be an admin to perform this action.");
+    }
+    
+    const requestRef = doc(db, 'verificationRequests', targetUserId);
+    
+    if (action === 'approve') {
+        const userRef = doc(db, 'users', targetUserId);
+        await updateDoc(userRef, { isVerified: true });
+    }
+    
+    // For both approve and reject, we delete the request
+    await deleteDoc(requestRef);
 }
