@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc, setDoc, deleteDoc, limit } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy, doc, getDoc, writeBatch, getDocs, Timestamp, updateDoc, setDoc, deleteDoc, limit, arrayUnion } from "firebase/firestore";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
 import { AddContactDialog } from "./add-contact-dialog";
@@ -48,6 +48,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Badge } from "./ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { isAdmin } from "@/services/admin";
+import ViewOnceMessage from "./view-once-message";
 
 
 interface ChatUser {
@@ -67,6 +68,8 @@ interface Message {
     text?: string;
     url?: string;
     fileName?: string;
+    isViewOnce?: boolean;
+    viewedBy?: string[];
 }
 
 interface Story {
@@ -116,6 +119,7 @@ export default function ChatPage() {
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isClearChatAlertOpen, setIsClearChatAlertOpen] = useState(false);
   const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [isViewOnce, setIsViewOnce] = useState(false);
 
 
   const router = useRouter();
@@ -398,6 +402,7 @@ export default function ChatPage() {
             senderId: user.uid,
             timestamp: serverTimestamp(),
             type: 'text',
+            ...(isViewOnce && { isViewOnce: true, viewedBy: [] })
         };
         await addDoc(messagesCollection, messageDoc);
         
@@ -412,6 +417,7 @@ export default function ChatPage() {
         await addDoc(notificationCollection, notificationDoc);
 
         setNewMessage("");
+        if (isViewOnce) setIsViewOnce(false);
     } catch (error) {
         toast({
             variant: "destructive",
@@ -462,8 +468,10 @@ export default function ChatPage() {
             type: messageType,
             url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
             fileName: resolvedFileName,
+             ...(isViewOnce && { isViewOnce: true, viewedBy: [] })
           };
           await addDoc(messagesCollection, messageDoc);
+           if (isViewOnce) setIsViewOnce(false);
 
           // Create notification for the recipient
           const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
@@ -677,6 +685,20 @@ export default function ChatPage() {
     }
   };
 
+  const markMessageAsViewed = async (messageId: string) => {
+    if (!user || !selectedContact) return;
+    const chatId = [user.uid, selectedContact.id].sort().join('_');
+    const messageRef = doc(db, 'chats', chatId, 'messages', messageId);
+    try {
+      await updateDoc(messageRef, {
+        viewedBy: arrayUnion(user.uid)
+      });
+    } catch (error) {
+      console.error("Error marking message as viewed:", error);
+    }
+  };
+
+
   if (loading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -858,31 +880,37 @@ export default function ChatPage() {
                            const isMyMessage = message.senderId === user.uid;
 
                            return (
-                               <div key={message.id} className={`group flex items-center gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                               <div key={message.id} className={`group flex items-start gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
                                    {isMyMessage && (
                                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
                                            <Trash2 className="h-4 w-4" />
                                        </Button>
                                    )}
-                                   <div className={`rounded-lg px-4 py-2 max-w-sm ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                       {message.type === 'text' && <p>{message.text}</p>}
-                                       {message.type === 'image' && message.url && (
-                                           <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
-                                       )}
-                                       {message.type === 'file' && message.url && (
-                                           <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
-                                              <Download className="w-4 h-4"/>
-                                              <span>{message.fileName || 'Download File'}</span>
-                                           </a>
-                                       )}
-                                       {message.type === 'audio' && message.url && (
-                                           <audio controls src={message.url} className="max-w-full">
-                                                Your browser does not support the audio element.
-                                           </audio>
-                                       )}
-                                       <p className="text-xs text-right opacity-70 mt-1">
-                                           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                       </p>
+                                   <div className={`rounded-lg px-4 py-2 max-w-sm relative ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                        {message.isViewOnce ? (
+                                            <ViewOnceMessage message={message} currentUser={user} onOpen={markMessageAsViewed} />
+                                        ) : (
+                                            <>
+                                                {message.type === 'text' && <p>{message.text}</p>}
+                                                {message.type === 'image' && message.url && (
+                                                    <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
+                                                )}
+                                                {message.type === 'file' && message.url && (
+                                                    <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
+                                                    <Download className="w-4 h-4"/>
+                                                    <span>{message.fileName || 'Download File'}</span>
+                                                    </a>
+                                                )}
+                                                {message.type === 'audio' && message.url && (
+                                                    <audio controls src={message.url} className="max-w-full">
+                                                            Your browser does not support the audio element.
+                                                    </audio>
+                                                )}
+                                            </>
+                                        )}
+                                        <p className="text-xs text-right opacity-70 mt-1">
+                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
                                    </div>
                                </div>
                            );
@@ -897,6 +925,11 @@ export default function ChatPage() {
                                 <span className="sr-only">Attach file</span>
                             </Button>
                              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
+                            
+                             <Button type="button" size="icon" variant={isViewOnce ? "secondary" : "ghost"} onClick={() => setIsViewOnce(!isViewOnce)} disabled={!isOnline || isRecording}>
+                                {isViewOnce ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                <span className="sr-only">{isViewOnce ? "Disable View Once" : "Enable View Once"}</span>
+                            </Button>
                             
                             {isRecording ? (
                                 <div className="flex-1 flex items-center justify-center text-destructive animate-pulse">
