@@ -155,11 +155,17 @@ export default function ChatPage() {
     return () => unsubscribe();
   }, [router]);
   
-   useEffect(() => {
-    // Check for microphone permission on component mount
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => setHasMicPermission(true))
-        .catch(() => setHasMicPermission(false));
+  const requestMicPermission = useCallback(async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasMicPermission(true);
+        // Important: Stop the tracks immediately after getting permission
+        // to release the microphone. We only wanted the prompt.
+        stream.getTracks().forEach(track => track.stop());
+    } catch (error) {
+        console.error("Microphone permission denied:", error);
+        setHasMicPermission(false);
+    }
   }, []);
 
 
@@ -534,12 +540,19 @@ export default function ChatPage() {
   };
 
   const handleStartRecording = async () => {
-    if (isRecording || !hasMicPermission) {
-        if (!hasMicPermission) {
-            toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser settings." });
-        }
-        return;
+    if (isRecording || hasMicPermission === false) {
+      if (hasMicPermission === false) {
+          toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser settings." });
+      }
+      return;
     }
+    
+    if (hasMicPermission === null) {
+        await requestMicPermission();
+        // If permission is now granted, we can proceed. If not, the state will be false and this function will exit on next call.
+        if (!hasMicPermission) return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
@@ -562,6 +575,7 @@ export default function ChatPage() {
     } catch (error) {
       console.error("Error starting recording:", error);
       toast({ variant: "destructive", title: "Recording Error", description: "Could not start recording. Please ensure you have given microphone permissions." });
+      setHasMicPermission(false);
     }
   };
 
@@ -907,8 +921,18 @@ export default function ChatPage() {
                             <Alert>
                                 <MicOff className="h-4 w-4" />
                                 <AlertTitle>Microphone Access Denied</AlertTitle>
-                                <AlertDescription>
-                                    To send voice messages, please enable microphone permissions in your browser settings.
+                                <AlertDescription className="flex flex-col gap-2">
+                                    <span>To send voice messages, please enable microphone permissions in your browser settings.</span>
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                         {hasMicPermission === null && (
+                            <Alert>
+                                <MicOff className="h-4 w-4" />
+                                <AlertTitle>Microphone Permission Needed</AlertTitle>
+                                <AlertDescription className="flex flex-col gap-2 mt-2">
+                                    <span>To send voice messages, this app needs access to your microphone.</span>
+                                    <Button onClick={requestMicPermission} size="sm" className="w-fit">Request Permission</Button>
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -983,7 +1007,7 @@ export default function ChatPage() {
                                     />
                                 )}
                                 
-                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline || !hasMicPermission}>
+                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
                                     {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                                     <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
                                 </Button>
