@@ -213,27 +213,34 @@ export default function ChatPage() {
             fetchedContacts.forEach(contact => {
                 const chatId = [user.uid, contact.id].sort().join('_');
                 const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
-                
-                const unsubscribeLastRead = onSnapshot(doc(chatMemberRef), (memberDoc) => {
+
+                const unsubscribeMember = onSnapshot(chatMemberRef, (memberDoc) => {
                     const lastReadTimestamp = memberDoc.data()?.lastRead || null;
                     const messagesQuery = query(
                         collection(db, 'chats', chatId, 'messages'),
                         where('senderId', '==', contact.id),
                         ...(lastReadTimestamp ? [where('timestamp', '>', lastReadTimestamp)] : [])
                     );
-                    
+
                     const unsubscribeMessages = onSnapshot(messagesQuery, (messageSnapshot) => {
                         const unreadCount = messageSnapshot.size;
-                        setContacts(prevContacts => prevContacts.map(c => 
+                        setContacts(prevContacts => prevContacts.map(c =>
                             c.id === contact.id ? { ...c, unreadCount } : c
                         ));
+                    }, (error) => {
+                        console.error(`Error listening to messages for contact ${contact.id}:`, error);
                     });
-                    
+
                     // Store this listener to unsubscribe later
+                    if(unreadListenersRef.current.has(`msg_${contact.id}`)) {
+                       unreadListenersRef.current.get(`msg_${contact.id}`)!();
+                    }
                     unreadListenersRef.current.set(`msg_${contact.id}`, unsubscribeMessages);
                 });
-                unreadListenersRef.current.set(`lastRead_${contact.id}`, unsubscribeLastRead);
+                
+                unreadListenersRef.current.set(`member_${contact.id}`, unsubscribeMember);
             });
+
 
             if (selectedContact) {
               const updatedSelectedContact = allContacts.find(c => c.id === selectedContact.id);
