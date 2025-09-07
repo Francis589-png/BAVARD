@@ -100,14 +100,22 @@ export default function ForYouPage() {
         const contactsSnapshot = await getDocs(contactsRef);
         const contactIds = contactsSnapshot.docs.map(doc => doc.id);
 
-        const feedResponse = await getForYouFeed({
-            userId: user.uid,
-            posts: fetchedPosts.map(p => ({ id: p.id, title: p.title, description: p.description, userId: p.userId, likes: p.likes })),
-            contactIds: contactIds,
-        });
+        try {
+            const feedResponse = await getForYouFeed({
+                userId: user.uid,
+                posts: fetchedPosts.map(p => ({ id: p.id, title: p.title, description: p.description || '', userId: p.userId, likes: p.likes })),
+                contactIds: contactIds,
+            });
 
-        setRankedPostIds(feedResponse.rankedPostIds);
-        setLoading(false);
+            setRankedPostIds(feedResponse.rankedPostIds);
+        } catch (error) {
+            console.error("Error getting For You feed:", error);
+            // Fallback to a simple sort if AI fails
+            const sortedPosts = fetchedPosts.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            setRankedPostIds(sortedPosts.map(p => p.id));
+        } finally {
+            setLoading(false);
+        }
     });
 
     return () => unsubscribePosts();

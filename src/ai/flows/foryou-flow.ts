@@ -4,38 +4,14 @@
  * @fileOverview A flow for creating a personalized "For You" feed using AI.
  *
  * - getForYouFeed - A function that takes a user and posts and returns a ranked list of post IDs.
- * - ForYouFeedInput - The input type for the getForYouFeed function.
- * - ForYouFeedOutput - The return type for the getForYouFeed function.
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'zod';
-
-const PostSchema = z.object({
-    id: z.string(),
-    title: z.string(),
-    description: z.string().optional(),
-    userId: z.string(),
-    likes: z.array(z.string()),
-});
-
-export const ForYouFeedInputSchema = z.object({
-  userId: z.string().describe("The ID of the user for whom the feed is being generated."),
-  posts: z.array(PostSchema).describe("A list of all available posts to be ranked."),
-  contactIds: z.array(z.string()).describe("A list of user IDs that are in the current user's contacts."),
-});
-export type ForYouFeedInput = z.infer<typeof ForYouFeedInputSchema>;
-
-export const ForYouFeedOutputSchema = z.object({
-  rankedPostIds: z.array(z.string()).describe("A list of post IDs sorted in the recommended order for the user."),
-});
-export type ForYouFeedOutput = z.infer<typeof ForYouFeedOutputSchema>;
-
+import { ForYouFeedInputSchema, ForYouFeedOutputSchema, type ForYouFeedInput, type ForYouFeedOutput } from '@/ai/schemas/foryou-schemas';
 
 export async function getForYouFeed(input: ForYouFeedInput): Promise<ForYouFeedOutput> {
   return forYouFeedFlow(input);
 }
-
 
 const prompt = ai.definePrompt({
   name: 'forYouFeedPrompt',
