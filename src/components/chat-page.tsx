@@ -130,7 +130,7 @@ export default function ChatPage() {
   const router = useRouter();
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isOnline = useOnlineStatus();
   const unreadListenersRef = useRef<Map<string, () => void>>(new Map());
 
