@@ -14,6 +14,7 @@ import { uploadFile } from "@/ai/flows/pinata-flow";
 import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
 import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
+import { categorizeVideo } from "@/ai/flows/categorize-video-flow";
 
 export default function CreatePostPage() {
     const [user, setUser] = useState<User | null>(null);
@@ -93,6 +94,18 @@ export default function CreatePostPage() {
                     const mediaUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
 
                     if (target === 'feed') {
+                        let categories: string[] = [];
+                        if (fileType === 'video') {
+                            try {
+                                const result = await categorizeVideo({ videoDataUri: dataUri });
+                                categories = result.categories;
+                            } catch (catError) {
+                                console.error("Video categorization failed:", catError);
+                                toast({ variant: "destructive", title: "AI Categorization Failed", description: "Could not categorize video, but the post will be created without categories." });
+                            }
+                        }
+
+
                         const postsCollection = collection(db, 'posts');
                         await addDoc(postsCollection, {
                             userId: user.uid,
@@ -102,6 +115,7 @@ export default function CreatePostPage() {
                             description: description,
                             createdAt: serverTimestamp(),
                             likes: [],
+                            ...(categories.length > 0 && { categories }),
                         });
                         toast({ title: "Post Uploaded!", description: "Your post is now on the For You page." });
                         router.push("/foryou");

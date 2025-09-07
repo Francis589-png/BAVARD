@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "./ui/badge";
 
 export interface FeedPostProps {
     id: string;
@@ -40,12 +41,13 @@ export interface FeedPostProps {
     };
     likes: string[];
     createdAt: Timestamp;
+    categories?: string[];
     currentUserId: string | null;
     onCommentClick: () => void;
     onDelete: (postId: string) => void;
 }
 
-export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick, onDelete }: FeedPostProps) {
+export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick, onDelete, categories }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
@@ -251,6 +253,15 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                         </div>
                         <h3 className="text-white font-bold text-lg mt-2">{title}</h3>
                         <p className="text-white mt-1 text-sm">{description}</p>
+                        {categories && categories.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                                {categories.map((category, index) => (
+                                    <Badge key={index} variant="secondary" className="backdrop-blur-sm bg-black/20 text-white border-white/20">
+                                        {category}
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="flex flex-col items-center gap-2 text-white">
                         <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full flex flex-col h-auto p-2" onClick={handleLike}>

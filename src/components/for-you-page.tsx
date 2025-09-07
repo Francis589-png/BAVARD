@@ -132,7 +132,8 @@ export default function ForYouPage() {
         const lowercasedQuery = searchQuery.toLowerCase();
         orderedPosts = orderedPosts.filter(post => 
           post.title?.toLowerCase().includes(lowercasedQuery) ||
-          post.description?.toLowerCase().includes(lowercasedQuery)
+          post.description?.toLowerCase().includes(lowercasedQuery) ||
+          post.categories?.some(cat => cat.toLowerCase().includes(lowercasedQuery))
         );
     }
     
@@ -170,7 +171,7 @@ export default function ForYouPage() {
           <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <Input 
-              placeholder="Search by title..."
+              placeholder="Search by title, description, or category..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-gray-800/80 border-gray-700 text-white pl-10 w-full"
