@@ -132,7 +132,7 @@ export async function sendBavardMessage(adminId: string, targetUserId: string, m
         await setDoc(bavardUserRef, {
             name: "BAVARD",
             email: "official@bavard.app",
-            avatar: "", // Or a branded avatar URL
+            avatar: "https://bavard.app/icon.png", // Or a branded avatar URL
             isVerified: true,
         }, { merge: true });
 
@@ -236,3 +236,5 @@ export async function processVerificationRequest(adminId: string, targetUserId: 
     // For both approve and reject, we delete the request
     await deleteDoc(requestRef);
 }
+
+    
