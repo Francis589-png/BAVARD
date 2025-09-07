@@ -4,6 +4,7 @@
 
 import { db } from "@/lib/firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc, Timestamp } from "firebase/firestore";
+import { BAVARD_SYSTEM_UID } from "@/lib/constants";
 
 // !!! IMPORTANT SECURITY !!!
 // To grant admin access, replace this placeholder with your actual Firebase User ID (UID).
@@ -11,11 +12,6 @@ import { collection, getDocs, doc, updateDoc, getDoc, addDoc, serverTimestamp, s
 const ADMIN_UIDS = [
     'moxVcsIoAggsIf1tKpfXIMFX9nN2'
 ];
-
-// This is a special, reserved UID for the "BAVARD" system user.
-// All official communications will come from this user.
-// In a real application, this user would be created in Firebase Auth and its UID used here.
-const BAVARD_SYSTEM_UID = 'bavard_system_user';
 
 
 /**
@@ -237,4 +233,4 @@ export async function processVerificationRequest(adminId: string, targetUserId: 
     await deleteDoc(requestRef);
 }
 
-    
+  

@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff, MicOff } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff, MicOff, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { isAdmin } from "@/services/admin";
 import ViewOnceMessage from "./view-once-message";
 import { VerifiedBadge } from "./verified-badge";
+import { JUSU_AI_USER_ID, BAVARD_SYSTEM_UID } from "@/lib/constants";
+import { getAssistantResponse } from "@/ai/flows/assistant-flow";
 
 
 interface ChatUser {
@@ -72,6 +74,7 @@ interface Message {
     fileName?: string;
     isViewOnce?: boolean;
     viewedBy?: string[];
+    isTyping?: boolean;
 }
 
 interface Story {
@@ -95,7 +98,14 @@ interface Notification {
     read: boolean;
 }
 
-const BAVARD_SYSTEM_UID = 'bavard_system_user';
+const jusuAiUser: ChatUser = {
+  id: JUSU_AI_USER_ID,
+  name: "JUSU AI",
+  email: "ai@jusudrive.com",
+  avatar: "/jusu-ai-avatar.png",
+  online: true,
+  isVerified: true,
+};
 
 
 export default function ChatPage() {
@@ -160,8 +170,8 @@ export default function ChatPage() {
     if (contact && user) {
         sessionStorage.setItem('selectedContactId', contact.id);
         
-        // Don't mark messages as read for the read-only Bavard chat
-        if (contact.id === BAVARD_SYSTEM_UID) return;
+        // Don't mark messages as read for read-only or AI chats
+        if (contact.id === BAVARD_SYSTEM_UID || contact.id === JUSU_AI_USER_ID) return;
 
         const chatId = [user.uid, contact.id].sort().join("_");
         const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
@@ -197,7 +207,8 @@ export default function ChatPage() {
             querySnapshot.forEach(doc => {
               fetchedContacts.push({id: doc.id, ...doc.data(), unreadCount: 0 } as ChatUser)
             });
-            setContacts(fetchedContacts);
+            const allContacts = [jusuAiUser, ...fetchedContacts];
+            setContacts(allContacts);
 
             fetchedContacts.forEach(contact => {
                 const chatId = [user.uid, contact.id].sort().join('_');
@@ -225,23 +236,23 @@ export default function ChatPage() {
             });
 
             if (selectedContact) {
-              const updatedSelectedContact = fetchedContacts.find(c => c.id === selectedContact.id);
+              const updatedSelectedContact = allContacts.find(c => c.id === selectedContact.id);
               if (updatedSelectedContact) {
                 setSelectedContact(updatedSelectedContact);
               } else {
-                 selectContact(fetchedContacts[0] || null);
+                 selectContact(allContacts[0] || null);
               }
             } else {
                const prevSelectedId = sessionStorage.getItem('selectedContactId');
-               const contactToSelect = fetchedContacts.find(u => u.id === prevSelectedId) || fetchedContacts[0] || null;
+               const contactToSelect = allContacts.find(u => u.id === prevSelectedId) || allContacts[0] || null;
                selectContact(contactToSelect);
             }
           });
           return () => unsubscribeUsers();
 
         } else {
-          setContacts([]);
-          selectContact(null);
+          setContacts([jusuAiUser]);
+          selectContact(jusuAiUser);
         }
       }
     );
@@ -398,34 +409,53 @@ export default function ChatPage() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim() === "" || !user || !selectedContact || !isOnline) return;
+    
+    const isJusuAiChat = selectedContact.id === JUSU_AI_USER_ID;
+    
     if (selectedContact.id === BAVARD_SYSTEM_UID) return; // Prevent sending messages to Bavard
 
     const chatId = [user.uid, selectedContact.id].sort().join("_");
     const messagesCollection = collection(db, "chats", chatId, "messages");
-    const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
+    
+    const userMessage = newMessage;
+    setNewMessage("");
 
     try {
         const messageDoc = {
-            text: newMessage,
+            text: userMessage,
             senderId: user.uid,
             timestamp: serverTimestamp(),
-            type: 'text',
+            type: 'text' as const,
             ...(isViewOnce && { isViewOnce: true, viewedBy: [] })
         };
         await addDoc(messagesCollection, messageDoc);
-        
-        const notificationDoc = {
-            type: 'new_message',
-            senderId: user.uid,
-            senderName: user.displayName || user.email,
-            chatId: chatId,
-            timestamp: serverTimestamp(),
-            read: false,
-        };
-        await addDoc(notificationCollection, notificationDoc);
-
-        setNewMessage("");
         if (isViewOnce) setIsViewOnce(false);
+        
+        if (isJusuAiChat) {
+             setMessages(prev => [...prev, {id: 'typing', senderId: JUSU_AI_USER_ID, isTyping: true, type: 'text', timestamp: new Date() }]);
+             const aiResponse = await getAssistantResponse(userMessage);
+             const aiMessageDoc = {
+                text: aiResponse,
+                senderId: JUSU_AI_USER_ID,
+                timestamp: serverTimestamp(),
+                type: 'text' as const,
+            };
+            await addDoc(messagesCollection, aiMessageDoc);
+            
+        } else {
+            // Create notification for human recipient
+            const notificationCollection = collection(db, 'users', selectedContact.id, 'notifications');
+            const notificationDoc = {
+                type: 'new_message',
+                senderId: user.uid,
+                senderName: user.displayName || user.email,
+                chatId: chatId,
+                timestamp: serverTimestamp(),
+                read: false,
+            };
+            await addDoc(notificationCollection, notificationDoc);
+        }
+
     } catch (error) {
         toast({
             variant: "destructive",
@@ -433,6 +463,7 @@ export default function ChatPage() {
             description: "Failed to send message. Please try again.",
         });
         console.error("Send Message Error:", error);
+        setNewMessage(userMessage); // Restore message on error
     }
   }
 
@@ -450,7 +481,7 @@ export default function ChatPage() {
   
   const handleFileUpload = async (file: Blob, fileName?: string) => {
     if (!user || !selectedContact || !isOnline) return;
-    if (selectedContact.id === BAVARD_SYSTEM_UID) return;
+    if (selectedContact.id === BAVARD_SYSTEM_UID || selectedContact.id === JUSU_AI_USER_ID) return;
     
     setUploading(true);
     const resolvedFileName = fileName || (file instanceof File ? file.name : `audio-message-${Date.now()}.webm`);
@@ -560,7 +591,11 @@ export default function ChatPage() {
 
     } catch (error) {
       console.error("Error starting recording:", error);
-      toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser or app settings." });
+      if (error instanceof Error && error.name === 'NotAllowedError') {
+        toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser or app settings." });
+      } else {
+        toast({ variant: "destructive", title: "Microphone Error", description: "Could not access the microphone." });
+      }
       setHasMicPermission(false);
     }
   };
@@ -730,6 +765,7 @@ export default function ChatPage() {
   }
 
   const isBavardChat = selectedContact?.id === BAVARD_SYSTEM_UID;
+  const isJusuAiChat = selectedContact?.id === JUSU_AI_USER_ID;
 
   return (
     <SidebarProvider>
@@ -836,7 +872,7 @@ export default function ChatPage() {
                             >
                             <Avatar className="h-8 w-8">
                                 <AvatarImage src={contact.avatar} alt={contact.name} />
-                                <AvatarFallback>{contact.name?.charAt(0) || contact.email?.charAt(0)}</AvatarFallback>
+                                <AvatarFallback>{contact.id === JUSU_AI_USER_ID ? <Bot/> : contact.name?.charAt(0) || contact.email?.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <span className="flex-1 truncate">{contact.name || contact.email}</span>
                              {contact.unreadCount && contact.unreadCount > 0 && (
@@ -878,19 +914,21 @@ export default function ChatPage() {
                                 {selectedContact.isVerified && <VerifiedBadge />}
                             </h2>
                         </div>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                    <MoreVertical className="h-5 w-5" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => setIsClearChatAlertOpen(true)} className="text-destructive">
-                                    <Eraser className="mr-2 h-4 w-4" />
-                                    Clear Chat
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        {!isJusuAiChat && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                        <MoreVertical className="h-5 w-5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                    <DropdownMenuItem onClick={() => setIsClearChatAlertOpen(true)} className="text-destructive">
+                                        <Eraser className="mr-2 h-4 w-4" />
+                                        Clear Chat
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </header>
 
                     <main className="flex-1 p-4 space-y-4 overflow-y-auto">
@@ -915,9 +953,22 @@ export default function ChatPage() {
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
 
+                           if (message.isTyping) {
+                                return (
+                                    <div key={message.id} className="flex items-start gap-2 justify-start">
+                                        <div className="rounded-lg px-4 py-2 max-w-sm relative bg-muted">
+                                            <div className="flex items-center gap-2">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                <span>JUSU AI is typing...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                           }
+
                            return (
                                <div key={message.id} className={`group flex items-start gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   {isMyMessage && !isBavardChat && (
+                                   {isMyMessage && !isBavardChat && !isJusuAiChat && (
                                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
                                            <Trash2 className="h-4 w-4" />
                                        </Button>
@@ -957,16 +1008,20 @@ export default function ChatPage() {
                      {!isBavardChat && (
                         <footer className="p-4 border-t">
                             <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                                <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline || isRecording}>
-                                    <Paperclip className="w-5 h-5" />
-                                    <span className="sr-only">Attach file</span>
-                                </Button>
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
-                                
-                                <Button type="button" size="icon" variant={isViewOnce ? "secondary" : "ghost"} onClick={() => setIsViewOnce(!isViewOnce)} disabled={!isOnline || isRecording}>
-                                    {isViewOnce ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                    <span className="sr-only">{isViewOnce ? "Disable View Once" : "Enable View Once"}</span>
-                                </Button>
+                                 {!isJusuAiChat && (
+                                    <>
+                                        <Button type="button" size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={!isOnline || isRecording}>
+                                            <Paperclip className="w-5 h-5" />
+                                            <span className="sr-only">Attach file</span>
+                                        </Button>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isRecording}/>
+                                        
+                                        <Button type="button" size="icon" variant={isViewOnce ? "secondary" : "ghost"} onClick={() => setIsViewOnce(!isViewOnce)} disabled={!isOnline || isRecording}>
+                                            {isViewOnce ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                            <span className="sr-only">{isViewOnce ? "Disable View Once" : "Enable View Once"}</span>
+                                        </Button>
+                                    </>
+                                 )}
                                 
                                 {isRecording ? (
                                     <div className="flex-1 flex items-center justify-center text-destructive animate-pulse">
@@ -975,7 +1030,7 @@ export default function ChatPage() {
                                     </div>
                                 ) : (
                                     <Input 
-                                        placeholder={isOnline ? "Type a message..." : "You are offline"}
+                                        placeholder={isOnline ? (isJusuAiChat ? "Ask JUSU AI anything..." : "Type a message...") : "You are offline"}
                                         className="flex-1"
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
@@ -983,10 +1038,12 @@ export default function ChatPage() {
                                     />
                                 )}
                                 
-                                <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
-                                    {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                                    <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
-                                </Button>
+                                {!isJusuAiChat && (
+                                    <Button type="button" size="icon" variant={isRecording ? "destructive" : "ghost"} onClick={handleToggleRecording} disabled={uploading || !isOnline}>
+                                        {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                        <span className="sr-only">{isRecording ? "Stop recording" : "Start recording"}</span>
+                                    </Button>
+                                )}
 
                                 <Button type="submit" size="icon" disabled={uploading || !isOnline || isRecording || newMessage.trim() === ""}>
                                     {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
@@ -1064,4 +1121,4 @@ export default function ChatPage() {
   );
 }
 
-    
+  
