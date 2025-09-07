@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { isAdmin, getAppStatistics, getAllUsers, updateUserStatus } from "@/services/admin";
-import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, ShieldAlert, ArrowLeft, Users, FileText, HardDrive, MoreVertical, Search, ShieldCheck, Ban, CheckCircle, XCircle, MessageCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -17,6 +17,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "./ui/badge";
+import { doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 
 interface AppStats {
@@ -140,6 +142,36 @@ export default function AdminPage() {
         } finally {
             setIsSubmitting(false);
             setActionAlert({ isOpen: false, user: null, action: null });
+        }
+    };
+    
+    const handleStartChat = async (targetUser: AppUser) => {
+        if (!user) return;
+        setIsSubmitting(true);
+
+        try {
+            // Check if user is already a contact
+            const contactRef = doc(db, 'users', user.uid, 'contacts', targetUser.id);
+            const contactSnap = await getDoc(contactRef);
+
+            if (!contactSnap.exists()) {
+                // If not, add them
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'users', user.uid, 'contacts', targetUser.id), { addedAt: serverTimestamp() });
+                batch.set(doc(db, 'users', targetUser.id, 'contacts', user.uid), { addedAt: serverTimestamp() });
+                await batch.commit();
+                toast({ title: "Contact Added", description: `Started a new chat with ${targetUser.name}.` });
+            }
+
+            // Navigate to chat page and set the selected contact
+            sessionStorage.setItem('selectedContactId', targetUser.id);
+            router.push('/chat');
+
+        } catch (error) {
+            console.error("Error starting chat:", error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not start a chat with this user.' });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -287,11 +319,14 @@ export default function AdminPage() {
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon">
+                                                            <Button variant="ghost" size="icon" disabled={isSubmitting}>
                                                                 <MoreVertical className="h-4 w-4" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent>
+                                                             <DropdownMenuItem onClick={() => handleStartChat(u)} disabled={u.id === user?.uid}>
+                                                                <MessageCircle className="mr-2 h-4 w-4" /> Message
+                                                            </DropdownMenuItem>
                                                             {u.isBanned ? (
                                                                 <DropdownMenuItem onClick={() => handleActionClick(u, 'unban')}>
                                                                     <XCircle className="mr-2 h-4 w-4" /> Unban
@@ -331,4 +366,3 @@ export default function AdminPage() {
         </div>
     );
 }
-
