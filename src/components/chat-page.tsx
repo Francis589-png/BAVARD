@@ -528,6 +528,16 @@ export default function ChatPage() {
   const handleStartRecording = async () => {
     if (isRecording) return;
     
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast({
+            variant: "destructive",
+            title: "Feature Not Supported",
+            description: "Your browser does not support voice recording.",
+        });
+        setHasMicPermission(false);
+        return;
+    }
+
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setHasMicPermission(true);
@@ -542,7 +552,6 @@ export default function ChatPage() {
         mediaRecorderRef.current.addEventListener("stop", async () => {
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
             await handleFileUpload(audioBlob, `voice-message-${Date.now()}.webm`);
-            // Stop all media tracks to release microphone
             stream.getTracks().forEach(track => track.stop());
         });
 
@@ -551,7 +560,7 @@ export default function ChatPage() {
 
     } catch (error) {
       console.error("Error starting recording:", error);
-      toast({ variant: "destructive", title: "Recording Error", description: "Could not start recording. Please ensure you have given microphone permissions." });
+      toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser or app settings." });
       setHasMicPermission(false);
     }
   };
@@ -1054,3 +1063,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
