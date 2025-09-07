@@ -74,7 +74,7 @@ export async function getAllUsers(): Promise<any[]> {
     return usersSnapshot.docs.map(doc => {
         const data = doc.data();
         // Ensure createdAt is serializable
-        if (data.createdAt instanceof Timestamp) {
+        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
             data.createdAt = data.createdAt.toDate().toISOString();
         }
         return {
@@ -161,7 +161,7 @@ export async function getReports(): Promise<any[]> {
     const reportsSnapshot = await getDocs(collection(db, 'reports'));
     const reports = reportsSnapshot.docs.map(doc => {
         const data = doc.data();
-        if (data.createdAt instanceof Timestamp) {
+        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
             data.createdAt = data.createdAt.toDate().toISOString();
         }
         return { id: doc.id, ...data };
@@ -196,7 +196,7 @@ export async function getVerificationRequests(): Promise<any[]> {
     const requestsSnapshot = await getDocs(collection(db, 'verificationRequests'));
     const requests = requestsSnapshot.docs.map(doc => {
         const data = doc.data();
-        if (data.createdAt instanceof Timestamp) {
+        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
             data.createdAt = data.createdAt.toDate().toISOString();
         }
         return { id: doc.id, ...data };
