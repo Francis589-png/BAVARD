@@ -77,12 +77,12 @@ const BavardPage: ComponentType = () => {
                 </div>
               </div>
               <Image
-                src="https://picsum.photos/600/600"
+                src="https://picsum.photos/600/400"
                 width="600"
-                height="600"
+                height="400"
                 alt="Hero"
                 data-ai-hint="people chatting"
-                className="mx-auto aspect-square overflow-hidden rounded-xl object-cover sm:w-full lg:order-last"
+                className="mx-auto aspect-video overflow-hidden rounded-xl object-cover sm:w-full lg:order-last"
               />
             </div>
           </div>

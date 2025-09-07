@@ -50,7 +50,7 @@ export default function ExplorePage() {
           const myContactIds = contactsSnapshot.docs.map(doc => doc.id);
           const idsToExclude = [user.uid, ...myContactIds];
           
-          // To use 'not-in' query, the array cannot be empty.
+          // To use 'not-in' query, the array must contain at least one value.
           if (idsToExclude.length === 0) { 
              idsToExclude.push("placeholder-for-query"); // Should not happen if user is logged in
           }
