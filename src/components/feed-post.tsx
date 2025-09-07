@@ -45,9 +45,10 @@ export interface FeedPostProps {
     currentUserId: string | null;
     onCommentClick: () => void;
     onDelete: (postId: string) => void;
+    onCategoryClick?: (category: string) => void;
 }
 
-export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick, onDelete, categories }: FeedPostProps) {
+export default function FeedPost({ id, mediaUrl, mediaType, title, description, user, likes, currentUserId, onCommentClick, onDelete, categories, onCategoryClick }: FeedPostProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
@@ -254,9 +255,14 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                         <h3 className="text-white font-bold text-lg mt-2">{title}</h3>
                         <p className="text-white mt-1 text-sm">{description}</p>
                         {categories && categories.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
+                            <div className="flex flex-wrap gap-1 mt-2" onClick={e => e.stopPropagation()}>
                                 {categories.map((category, index) => (
-                                    <Badge key={index} variant="secondary" className="backdrop-blur-sm bg-black/20 text-white border-white/20">
+                                    <Badge 
+                                        key={index}
+                                        variant="secondary" 
+                                        className="backdrop-blur-sm bg-black/20 text-white border-white/20 cursor-pointer hover:bg-white/30"
+                                        onClick={() => onCategoryClick?.(category)}
+                                    >
                                         {category}
                                     </Badge>
                                 ))}

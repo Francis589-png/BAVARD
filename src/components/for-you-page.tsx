@@ -6,13 +6,14 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, Search } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Play } from "lucide-react";
 import { collection, query, onSnapshot, getDocs, where, Timestamp, DocumentData, deleteDoc, doc } from "firebase/firestore";
 import FeedPost, { FeedPostProps } from "./feed-post";
 import Link from "next/link";
 import { CommentSheet } from "./comment-sheet";
 import { Input } from "./ui/input";
 import { getForYouFeed } from "@/ai/flows/foryou-flow";
+import Image from "next/image";
 
 
 interface ChatUser {
@@ -22,7 +23,7 @@ interface ChatUser {
   email: string;
 }
 
-interface Post extends Omit<FeedPostProps, 'currentUserId' | 'onCommentClick' | 'user' | 'likes' | 'onDelete'> {
+interface Post extends Omit<FeedPostProps, 'currentUserId' | 'onCommentClick' | 'user' | 'likes' | 'onDelete' | 'onCategoryClick'> {
     userId: string;
     likes: string[];
     user: {
@@ -150,6 +151,10 @@ export default function ForYouPage() {
     setAllPosts(prev => prev.filter(p => p.id !== postId));
   };
   
+  const handleCategoryClick = (category: string) => {
+      setSearchQuery(category);
+  };
+
 
   if (loading) {
     return (
@@ -159,10 +164,12 @@ export default function ForYouPage() {
     );
   }
 
+  const isSearching = searchQuery.trim().length > 0;
+
   return (
     <>
-      <div className="bg-black text-white h-screen overflow-y-scroll snap-y snap-mandatory">
-        <header className="fixed top-0 left-0 z-10 p-4 flex items-center w-full gap-4">
+      <div className="bg-black text-white h-screen flex flex-col">
+        <header className="fixed top-0 left-0 z-20 p-4 flex items-center w-full gap-4 bg-gradient-to-b from-black/70 to-transparent">
           <Link href="/chat" passHref>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 flex-shrink-0">
               <ArrowLeft />
@@ -179,34 +186,65 @@ export default function ForYouPage() {
           </div>
         </header>
 
-        <div className="relative h-full w-full pt-16">
-          {sortedAndFilteredPosts.length > 0 ? (
-            <>
-            {sortedAndFilteredPosts.map(post => (
-              <div key={post.id} className="h-screen w-full flex items-center justify-center snap-start">
-                <FeedPost 
-                  {...post} 
-                  currentUserId={user?.uid || null}
-                  onCommentClick={() => handleCommentClick(post)}
-                  onDelete={handleDeletePost}
-                />
-              </div>
-            ))}
-            </>
+        <main className="flex-1 overflow-y-auto pt-20">
+          {isSearching ? (
+             <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {sortedAndFilteredPosts.length > 0 ? (
+                    sortedAndFilteredPosts.map(post => (
+                       <div key={post.id} className="group relative aspect-[9/16] w-full bg-muted overflow-hidden rounded-md cursor-pointer">
+                           <Image src={post.mediaUrl} alt={post.title || ''} layout="fill" objectFit="cover" />
+                           {post.mediaType === 'video' && (
+                               <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                   <Play className="h-8 w-8 text-white" />
+                               </div>
+                           )}
+                           <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
+                               <h3 className="font-bold text-white text-sm truncate">{post.title}</h3>
+                               <p className="text-white text-xs truncate">{post.user.name}</p>
+                           </div>
+                       </div>
+                    ))
+                ) : (
+                    <div className="col-span-full h-full flex items-center justify-center text-center">
+                       <div>
+                          <h2 className="text-2xl font-bold">No Results Found</h2>
+                          <p className="text-muted-foreground">Try a different search term.</p>
+                       </div>
+                    </div>
+                )}
+             </div>
           ) : (
-            <div className="h-screen w-full flex items-center justify-center snap-start">
-              <div className="text-center">
-                <h2 className="text-2xl font-bold">{searchQuery ? "No Results Found" : "No Posts Yet"}</h2>
-                <p className="text-muted-foreground">
-                  {searchQuery ? "Try a different search term." : "Create the first post to see it here!"}
-                </p>
-                <Button onClick={() => router.push('/create-post')} className="mt-4">
-                    Create Post
-                </Button>
-              </div>
+            <div className="relative h-full w-full snap-y snap-mandatory overflow-y-scroll scroll-smooth">
+              {sortedAndFilteredPosts.length > 0 ? (
+                <>
+                {sortedAndFilteredPosts.map(post => (
+                  <div key={post.id} className="h-screen w-full flex items-center justify-center snap-start">
+                    <FeedPost 
+                      {...post} 
+                      currentUserId={user?.uid || null}
+                      onCommentClick={() => handleCommentClick(post)}
+                      onDelete={handleDeletePost}
+                      onCategoryClick={handleCategoryClick}
+                    />
+                  </div>
+                ))}
+                </>
+              ) : (
+                <div className="h-screen w-full flex items-center justify-center snap-start">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold">No Posts Yet</h2>
+                    <p className="text-muted-foreground">
+                       Create the first post to see it here!
+                    </p>
+                    <Button onClick={() => router.push('/create-post')} className="mt-4">
+                        Create Post
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </main>
       </div>
       {selectedPostForComments && user && (
           <CommentSheet 
