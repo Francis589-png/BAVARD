@@ -6,19 +6,21 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, UserPlus, ArrowLeft, MessageCircle, Search } from "lucide-react";
+import { Loader2, UserPlus, ArrowLeft, MessageCircle, Search, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { collection, query, where, getDocs, doc, writeBatch, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, writeBatch, serverTimestamp, onSnapshot, getDoc } from "firebase/firestore";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Separator } from "./ui/separator";
 
 interface ChatUser {
   id: string;
   name: string;
   avatar: string;
   email: string;
+  contactCount?: number;
 }
 
 export default function ExplorePage() {
@@ -52,25 +54,51 @@ export default function ExplorePage() {
           const myContactIds = contactsSnapshot.docs.map(doc => doc.id);
           const idsToExclude = [user.uid, ...myContactIds];
           
-          if (idsToExclude.length === 0) { 
-             idsToExclude.push("placeholder-for-query");
-          }
-
-          const discoverQuery = query(usersRef, where("id", "not-in", idsToExclude));
+          let discoverableUserIds: string[] = [];
           
           try {
-            const usersSnapshot = await getDocs(discoverQuery);
-            const users: ChatUser[] = [];
-            usersSnapshot.forEach((doc) => {
-                const data = doc.data();
-                users.push({
-                    id: data.id,
-                    name: data.name,
-                    avatar: data.avatar,
-                    email: data.email
-                });
+            // First, get all users to filter out the ones to exclude client-side
+            const allUsersSnapshot = await getDocs(usersRef);
+            allUsersSnapshot.forEach(doc => {
+              if (!idsToExclude.includes(doc.id)) {
+                discoverableUserIds.push(doc.id);
+              }
             });
-            setAllDiscoverUsers(users);
+
+            if (discoverableUserIds.length === 0) {
+              setAllDiscoverUsers([]);
+              setLoading(false);
+              return;
+            }
+            
+            // Fetch user data and contact counts for discoverable users
+            const usersWithContactCounts = await Promise.all(
+              discoverableUserIds.map(async (id) => {
+                const userDocRef = doc(db, 'users', id);
+                const userContactsRef = collection(db, 'users', id, 'contacts');
+
+                const [userDoc, contactsSnapshot] = await Promise.all([
+                  getDoc(userDocRef),
+                  getDocs(userContactsRef)
+                ]);
+
+                if (userDoc.exists()) {
+                  const userData = userDoc.data();
+                  return {
+                    id: id,
+                    name: userData.name,
+                    avatar: userData.avatar,
+                    email: userData.email,
+                    contactCount: contactsSnapshot.size
+                  };
+                }
+                return null;
+              })
+            );
+
+            const validUsers = usersWithContactCounts.filter(u => u !== null) as ChatUser[];
+            setAllDiscoverUsers(validUsers);
+
           } catch (error) {
             console.error("Error fetching discover users:", error);
             toast({ variant: "destructive", title: "Error", description: "Could not load users to discover." });
@@ -83,15 +111,23 @@ export default function ExplorePage() {
     }
   }, [user, toast]);
 
-  const filteredUsers = useMemo(() => {
+  const [popularCreators, otherUsers] = useMemo(() => {
+    const sortedUsers = [...allDiscoverUsers].sort((a, b) => (b.contactCount || 0) - (a.contactCount || 0));
+    const popular = sortedUsers.slice(0, 5);
+    const others = sortedUsers.slice(5);
+
     if (!searchQuery) {
-        return allDiscoverUsers;
+        return [popular, others];
     }
+
     const lowercasedQuery = searchQuery.toLowerCase();
-    return allDiscoverUsers.filter(u => 
+    const filtered = sortedUsers.filter(u => 
         u.name?.toLowerCase().includes(lowercasedQuery) || 
         u.email?.toLowerCase().includes(lowercasedQuery)
     );
+    // When searching, we don't distinguish between popular and other
+    return [[], filtered];
+
   }, [allDiscoverUsers, searchQuery]);
   
   const handleAddContact = async (contact: ChatUser) => {
@@ -118,6 +154,7 @@ export default function ExplorePage() {
       }
   };
 
+  const isSearching = searchQuery.trim().length > 0;
 
   if (loading || !user) {
     return (
@@ -150,41 +187,88 @@ export default function ExplorePage() {
         </header>
 
         <main className="p-4 md:p-6">
-            {filteredUsers.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {filteredUsers.map((u) => (
-                        <Card key={u.id}>
-                            <CardContent className="flex flex-col items-center justify-center p-6">
-                                <Avatar className="h-20 w-20 mb-4">
-                                    <AvatarImage src={u.avatar} alt={u.name} />
-                                    <AvatarFallback>{u.name?.charAt(0) || u.email?.charAt(0) || 'U'}</AvatarFallback>
-                                </Avatar>
-                                <h3 className="font-semibold text-lg text-center truncate w-full">{u.name || u.email}</h3>
-                                {u.name && <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>}
+            {!isSearching && popularCreators.length > 0 && (
+                <section className="mb-8">
+                    <h2 className="text-2xl font-bold mb-4">Popular Creators</h2>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                         {popularCreators.map((u) => (
+                             <Card key={u.id} className="hover:bg-muted/50 transition-colors">
+                                <CardContent className="flex items-center p-4 gap-4">
+                                     <Avatar className="h-16 w-16">
+                                        <AvatarImage src={u.avatar} alt={u.name} />
+                                        <AvatarFallback>{u.name?.charAt(0) || 'U'}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-semibold text-lg truncate">{u.name || u.email}</h3>
+                                        <p className="text-muted-foreground text-sm flex items-center gap-1">
+                                            <Users className="h-4 w-4" />
+                                            {u.contactCount} Contacts
+                                        </p>
+                                    </div>
+                                    <Button 
+                                        size="sm"
+                                        onClick={() => handleAddContact(u)}
+                                        disabled={addingContactId === u.id}
+                                    >
+                                        {addingContactId === u.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <UserPlus className="h-4 w-4" />
+                                        )}
+                                    </Button>
+                                </CardContent>
+                             </Card>
+                         ))}
+                    </div>
+                </section>
+            )}
+            
+            {!isSearching && popularCreators.length > 0 && <Separator className="my-8" />}
 
-                                <Button 
-                                    className="mt-4 w-full"
-                                    onClick={() => handleAddContact(u)}
-                                    disabled={addingContactId === u.id}
-                                >
-                                    {addingContactId === u.id ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <UserPlus className="mr-2 h-4 w-4" />
-                                    )}
-                                    Add Contact
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
+            {otherUsers.length > 0 ? (
+                <section>
+                    <h2 className="text-2xl font-bold mb-4">
+                        {isSearching ? 'Search Results' : 'More to Discover'}
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {otherUsers.map((u) => (
+                            <Card key={u.id}>
+                                <CardContent className="flex flex-col items-center justify-center p-6">
+                                    <Avatar className="h-20 w-20 mb-4">
+                                        <AvatarImage src={u.avatar} alt={u.name} />
+                                        <AvatarFallback>{u.name?.charAt(0) || u.email?.charAt(0) || 'U'}</AvatarFallback>
+                                    </Avatar>
+                                    <h3 className="font-semibold text-lg text-center truncate w-full">{u.name || u.email}</h3>
+                                    {u.name && <p className="text-muted-foreground text-sm text-center truncate w-full">{u.email}</p>}
+                                    <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
+                                        <Users className="h-3 w-3" />
+                                        {u.contactCount}
+                                    </p>
+
+                                    <Button 
+                                        className="mt-4 w-full"
+                                        onClick={() => handleAddContact(u)}
+                                        disabled={addingContactId === u.id}
+                                    >
+                                        {addingContactId === u.id ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <UserPlus className="mr-2 h-4 w-4" />
+                                        )}
+                                        Add Contact
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </section>
             ) : (
                 <div className="flex flex-col items-center justify-center text-center p-10 border-2 border-dashed rounded-lg mt-8">
                     <h2 className="text-2xl font-semibold mt-4">
-                        {searchQuery ? "No Creators Found" : "All Caught Up!"}
+                        {isSearching ? "No Creators Found" : "All Caught Up!"}
                     </h2>
                     <p className="text-muted-foreground mt-2">
-                         {searchQuery
+                         {isSearching
                            ? "Try a different search term to find new creators."
                            : "There are no new users to discover right now."}
                     </p>
@@ -194,3 +278,5 @@ export default function ExplorePage() {
     </div>
   );
 }
+
+    
