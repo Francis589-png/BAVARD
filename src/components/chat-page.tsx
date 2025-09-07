@@ -548,7 +548,6 @@ export default function ChatPage() {
 
         mediaRecorderRef.current.start();
         setIsRecording(true);
-        toast({ title: "Recording Started", description: "Press the button again to stop." });
 
     } catch (error) {
       console.error("Error starting recording:", error);
@@ -561,7 +560,7 @@ export default function ChatPage() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      toast({ title: "Recording Stopped", description: "Uploading your message..." });
+      toast({ title: "Recording Complete", description: "Uploading your message..." });
     }
   };
 
@@ -1055,5 +1054,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    
