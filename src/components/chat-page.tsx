@@ -851,8 +851,8 @@ export default function ChatPage() {
                             <AvatarFallback>{selectedContact.name?.charAt(0) || selectedContact.email?.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="ml-4 flex-1">
-                            <h2 className="text-lg font-semibold flex items-center gap-1.5">
-                                {selectedContact.name || selectedContact.email}
+                            <h2 className="text-lg font-semibold flex items-center gap-1">
+                                <span>{selectedContact.name || selectedContact.email}</span>
                                 {selectedContact.isVerified && <VerifiedBadge />}
                             </h2>
                         </div>

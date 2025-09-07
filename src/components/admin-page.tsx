@@ -339,7 +339,7 @@ export default function AdminPage() {
                                                                 </Avatar>
                                                                 <div>
                                                                     <div className="font-medium flex items-center gap-1">
-                                                                        {u.name}
+                                                                        <span>{u.name}</span>
                                                                         {u.isVerified && <VerifiedBadge />}
                                                                     </div>
                                                                     <div className="text-sm text-muted-foreground">{u.email}</div>

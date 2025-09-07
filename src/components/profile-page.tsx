@@ -260,8 +260,8 @@ export default function ProfilePage({ userId }: { userId: string }) {
                             )}
                         </div>
                         <div className="flex-1 text-center md:text-left">
-                            <CardTitle className="text-3xl flex items-center gap-2 justify-center md:justify-start">
-                                {profileUser.name}
+                            <CardTitle className="text-3xl flex items-center gap-1.5 justify-center md:justify-start">
+                                <span>{profileUser.name}</span>
                                 {profileUser.isVerified && <VerifiedBadge className="h-7 w-7" />}
                             </CardTitle>
                             <CardDescription>{profileUser.email}</CardDescription>

@@ -279,8 +279,8 @@ export default function FeedPost({ id, mediaUrl, mediaType, title, description, 
                                     <AvatarImage src={user.avatar} />
                                     <AvatarFallback>{user.name?.charAt(0)}</AvatarFallback>
                                 </Avatar>
-                                <div className="font-bold text-white flex items-center gap-1.5">
-                                    {user.name}
+                                <div className="font-bold text-white flex items-center gap-1">
+                                    <span>{user.name}</span>
                                     {user.isVerified && <VerifiedBadge />}
                                 </div>
                             </Link>
