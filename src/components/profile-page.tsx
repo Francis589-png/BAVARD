@@ -98,8 +98,10 @@ export default function ProfilePage({ userId }: { userId: string }) {
                     if (doc.exists()) {
                         const userData = doc.data() as ProfileUser;
                         setProfileUser(userData);
-                        setEditedName(userData.name);
-                        setEditedDescription(userData.description || "");
+                        if (!isEditing) {
+                            setEditedName(userData.name);
+                            setEditedDescription(userData.description || "");
+                        }
                     } else {
                         toast({ variant: 'destructive', title: 'User not found' });
                     }
@@ -127,7 +129,7 @@ export default function ProfilePage({ userId }: { userId: string }) {
 
         fetchProfileData();
 
-    }, [userId, toast]);
+    }, [userId, toast, isEditing]);
     
      useEffect(() => {
         if (currentUser && userId) {
@@ -140,14 +142,20 @@ export default function ProfilePage({ userId }: { userId: string }) {
             });
             
             // Check if profile user is a contact
-            const contactDocRef = doc(db, "users", currentUser.uid, "contacts", userId);
-            const unsubscribeIsContact = onSnapshot(contactDocRef, (doc) => {
-                setIsContact(doc.exists());
-            });
+            if (currentUser.uid !== userId) {
+                const contactDocRef = doc(db, "users", currentUser.uid, "contacts", userId);
+                const unsubscribeIsContact = onSnapshot(contactDocRef, (doc) => {
+                    setIsContact(doc.exists());
+                });
+                 return () => {
+                    unsubscribeCount();
+                    unsubscribeIsContact();
+                };
+            }
+
 
             return () => {
                 unsubscribeCount();
-                unsubscribeIsContact();
             };
         }
     }, [currentUser, userId]);
@@ -246,8 +254,8 @@ export default function ProfilePage({ userId }: { userId: string }) {
     
     const handleChat = () => {
         if (!profileUser) return;
-        router.push('/chat');
         sessionStorage.setItem('selectedContactId', profileUser.id);
+        router.push('/chat');
     };
 
     const confirmDeletePost = async () => {
@@ -280,12 +288,13 @@ export default function ProfilePage({ userId }: { userId: string }) {
                 <Button variant="ghost" size="icon" onClick={() => router.back()}>
                     <ArrowLeft />
                 </Button>
-                <h1 className="text-xl font-bold">{profileUser.name}</h1>
+                <h1 className="text-xl font-bold">{isEditing ? "Edit Profile" : profileUser.name}</h1>
                  {isMyProfile && (
                      <div className="ml-auto">
                         {isEditing ? (
                              <Button size="sm" onClick={handleSaveProfile} disabled={uploading}>
-                                <Save className="mr-2 h-4 w-4" /> Save
+                                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                                Save
                             </Button>
                         ) : (
                              <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>

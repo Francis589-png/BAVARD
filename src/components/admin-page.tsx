@@ -425,10 +425,12 @@ export default function AdminPage() {
                                                     <TableRow key={report.id}>
                                                         <TableCell>
                                                             {report.post ? (
-                                                                <a href={`/post/${report.postId}`} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-2">
-                                                                     <img src={report.post.mediaUrl} alt={report.post.title} className="w-10 h-10 object-cover rounded-md"/>
-                                                                    <span>{report.post.title || 'Untitled Post'}</span>
-                                                                </a>
+                                                                <Link href="/foryou" passHref>
+                                                                    <a className="hover:underline flex items-center gap-2">
+                                                                        <img src={report.post.mediaUrl} alt={report.post.title} className="w-10 h-10 object-cover rounded-md"/>
+                                                                        <span>{report.post.title || 'Untitled Post'}</span>
+                                                                    </a>
+                                                                </Link>
                                                             ) : (
                                                                 <span className="text-muted-foreground">Post Deleted</span>
                                                             )}

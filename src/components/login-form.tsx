@@ -108,9 +108,8 @@ function LoginFormComponent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  const inviteUserId = searchParams.get('invite');
-
   const getRedirectPath = () => {
+    const inviteUserId = searchParams.get('invite');
     return inviteUserId ? `/add-contact?userId=${inviteUserId}` : "/chat";
   }
 
@@ -185,6 +184,7 @@ function LoginFormComponent() {
     }
   }
 
+  const inviteUserId = searchParams.get('invite');
 
   return (
     <Card className="w-full max-w-sm">

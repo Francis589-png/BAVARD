@@ -208,7 +208,7 @@ export default function DrivePage() {
                     <CardHeader>
                         <CardTitle>Storage</CardTitle>
                         <CardDescription>
-                            You have used {formatBytes(totalSize)} of your {MAX_STORAGE_GB}GB storage limit.
+                            You have used {formatBytes(totalSize)} of your {MAX_STORAGE_GB} GB storage limit.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
