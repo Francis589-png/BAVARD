@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play, Trash2, MoreVertical } from "lucide-react";
+import { Loader2, Upload, ArrowLeft, Camera, Share2, UserPlus, MessageCircle, Play, Trash2, MoreVertical, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
 import { uploadFile } from "@/ai/flows/pinata-flow";
@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { VerifiedBadge } from "./verified-badge";
+import Link from "next/link";
 
 
 interface ProfileUser {
@@ -286,6 +287,14 @@ export default function ProfilePage({ userId }: { userId: string }) {
                                     {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                                     Save Picture
                                 </Button>
+                            )}
+                             {!profileUser.isVerified && (
+                                <Link href="/apply-for-verification" className="w-full sm:w-auto">
+                                    <Button className="w-full" variant="outline">
+                                        <ShieldCheck className="mr-2 h-4 w-4" />
+                                        Apply for Verification
+                                    </Button>
+                                </Link>
                             )}
                             <Button className="w-full sm:w-auto" variant="outline" onClick={handleShareInvite}>
                                 <Share2 className="mr-2 h-4 w-4" />
