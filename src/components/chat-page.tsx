@@ -470,29 +470,42 @@ export default function ChatPage() {
         if (isViewOnce) setIsViewOnce(false);
         
         if (isJusuAiChat) {
-             setMessages(prev => [...prev, {id: 'typing', senderId: JUSU_AI_USER_ID, isTyping: true, type: 'text', timestamp: new Date() }]);
-             
-             const chatHistory = messages
-                .filter(m => !m.isTyping && m.text) // Exclude previous typing indicators and non-text messages
-                .slice(-10) // Get last 10 messages for context
-                .map(m => ({
-                    role: m.senderId === JUSU_AI_USER_ID ? 'model' as const : 'user' as const,
-                    content: m.text || ''
-                }));
+            const typingIndicatorId = 'typing-' + Date.now();
+            setMessages(prev => [...prev, { id: typingIndicatorId, senderId: JUSU_AI_USER_ID, isTyping: true, type: 'text', timestamp: new Date() }]);
+            
+            try {
+                const chatHistory = messages
+                    .filter(m => !m.isTyping && m.text) // Exclude previous typing indicators and non-text messages
+                    .slice(-10) // Get last 10 messages for context
+                    .map(m => ({
+                        role: m.senderId === JUSU_AI_USER_ID ? 'model' as const : 'user' as const,
+                        content: m.text || ''
+                    }));
 
-             const aiResponse = await getAssistantResponse({
-                 prompt: userMessage,
-                 history: chatHistory,
-             });
+                const aiResponse = await getAssistantResponse({
+                    prompt: userMessage,
+                    history: chatHistory,
+                });
 
-             const aiMessageDoc = {
-                text: aiResponse,
-                senderId: JUSU_AI_USER_ID,
-                timestamp: serverTimestamp(),
-                type: 'text' as const,
-                readBy: [user.uid, JUSU_AI_USER_ID],
-            };
-            await addDoc(messagesCollection, aiMessageDoc);
+                const aiMessageDoc = {
+                    text: aiResponse,
+                    senderId: JUSU_AI_USER_ID,
+                    timestamp: serverTimestamp(),
+                    type: 'text' as const,
+                    readBy: [user.uid, JUSU_AI_USER_ID],
+                };
+                await addDoc(messagesCollection, aiMessageDoc);
+            } catch (error) {
+                 toast({
+                    variant: "destructive",
+                    title: "JUSU AI Error",
+                    description: "Sorry, I'm having trouble responding right now. Please try again in a moment.",
+                });
+                console.error("AI Response Error:", error);
+            } finally {
+                // Always remove the typing indicator
+                setMessages(prev => prev.filter(m => m.id !== typingIndicatorId));
+            }
             
         } else {
             // Create notification for human recipient
@@ -1196,3 +1209,5 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
+
+    
