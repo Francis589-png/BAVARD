@@ -4,3 +4,12 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+[functions]
+  included_files = ["src/ai/flows/**"]
+
+[functions."genkit:flow:uploadFileFlow"]
+  timeout = 120
+
+[functions."genkit:flow:categorizeVideoFlow"]
+  timeout = 120
