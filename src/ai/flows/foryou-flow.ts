@@ -24,7 +24,8 @@ You will be given the user's ID, a list of their contact's IDs, and a list of al
 Rank the posts based on the following criteria, from most important to least important:
 1.  **Posts from Contacts:** Posts created by users in the 'contactIds' list should be prioritized.
 2.  **Engagement:** Posts with a higher number of likes should be ranked higher.
-3.  **Content (Implicit):** The titles and descriptions of the posts should be considered, but direct contact and like count are more important for this version of the algorithm.
+3.  **Recency:** Newer posts (higher 'createdAt' timestamp) should be ranked higher.
+4.  **Content (Implicit):** The titles and descriptions of the posts should be considered, but direct contact, likes, and recency are more important for this version of the algorithm.
 
 Return a JSON object containing a single key "rankedPostIds", which is an array of post IDs sorted in the order you recommend they appear in the user's feed.
 
@@ -57,7 +58,7 @@ const forYouFeedFlow = ai.defineFlow(
     } catch (error) {
         console.error("AI For You feed failed, falling back to chronological", error);
         // Fallback to chronological sort if the AI call fails
-        const sortedPosts = [...input.posts].sort((a, b) => b.id.localeCompare(a.id));
+        const sortedPosts = [...input.posts].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         return { rankedPostIds: sortedPosts.map(p => p.id) };
     }
   }

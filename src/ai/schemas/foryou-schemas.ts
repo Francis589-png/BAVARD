@@ -4,12 +4,18 @@
 
 import { z } from 'zod';
 
+const TimestampSchema = z.object({
+  seconds: z.number(),
+  nanoseconds: z.number(),
+});
+
 const PostSchema = z.object({
   id: z.string(),
   title: z.string().optional(),
   description: z.string().optional(),
   userId: z.string(),
   likes: z.array(z.string()),
+  createdAt: TimestampSchema.optional(),
 });
 
 export const ForYouFeedInputSchema = z.object({
