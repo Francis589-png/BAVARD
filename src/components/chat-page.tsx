@@ -499,7 +499,7 @@ export default function ChatPage() {
                  toast({
                     variant: "destructive",
                     title: "JUSU AI Error",
-                    description: "Sorry, I'm having trouble responding right now. Please try again in a moment.",
+                    description: "Sorry, the AI assistant is currently unavailable. Please try again later.",
                 });
                 console.error("AI Response Error:", error);
             } finally {
@@ -1209,5 +1209,3 @@ export default function ChatPage() {
     </SidebarProvider>
   );
 }
-
-    

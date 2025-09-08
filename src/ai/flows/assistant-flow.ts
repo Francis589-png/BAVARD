@@ -85,6 +85,7 @@ const assistantFlow = ai.defineFlow(
       const { text } = await ai.generate({
         prompt: input.prompt,
         history: input.history,
+        model: 'googleai/gemini-2.5-flash',
         system: jusuAiSystemPrompt,
         tools: [readFile],
       });
