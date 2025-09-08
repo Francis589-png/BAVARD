@@ -195,7 +195,7 @@ export default function ForYouPage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pt-20">
+        <main className="flex-1 overflow-y-auto pt-20 sm:pt-0">
           {isSearching ? (
              <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {sortedAndFilteredPosts.length > 0 ? (
@@ -243,7 +243,7 @@ export default function ForYouPage() {
                   <div className="text-center">
                     <h2 className="text-2xl font-bold">No Posts Yet</h2>
                     <p className="text-muted-foreground">
-                       Create the first post to see it here!
+                       Be the first to share something with the community!
                     </p>
                     <Button onClick={() => router.push('/create-post')} className="mt-4">
                         Create Post
@@ -266,3 +266,4 @@ export default function ForYouPage() {
     </>
   );
 }
+
