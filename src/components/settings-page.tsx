@@ -51,10 +51,11 @@ export default function SettingsPage() {
             return;
         }
         try {
+            // This will prompt the user for permission. The `onchange` listener will update the state.
             await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (error) {
             console.error("Mic permission error", error);
-            // State update will happen via the onchange listener
+            // The state will be updated to 'denied' by the browser's permission change event.
         }
     };
 
@@ -96,12 +97,19 @@ export default function SettingsPage() {
                                         Microphone Access
                                     </Label>
                                     <p className="text-sm text-muted-foreground">
-                                        Required for sending voice messages.
+                                        {micStatus === 'granted' && 'Microphone access is enabled for voice messages.'}
+                                        {micStatus === 'denied' && 'Microphone access is denied. You must grant permission to send voice messages.'}
+                                        {micStatus === 'prompt' && 'Required for sending voice messages.'}
+                                        {micStatus === 'unsupported' && 'This feature is not supported by your browser.'}
                                     </p>
                                 </div>
                                  <div className="flex items-center gap-2">
                                      {micStatus === 'granted' && <span className="text-sm flex items-center gap-1 text-green-600"><CheckCircle className="w-4 h-4"/> Allowed</span>}
-                                     {micStatus === 'denied' && <span className="text-sm flex items-center gap-1 text-destructive"><AlertCircle className="w-4 h-4"/> Denied</span>}
+                                     {micStatus === 'denied' && (
+                                        <Button size="sm" variant="destructive" onClick={handleRequestMicPermission}>
+                                             Grant Access
+                                         </Button>
+                                     )}
                                      {micStatus === 'prompt' && (
                                          <Button size="sm" onClick={handleRequestMicPermission}>
                                              Request Access

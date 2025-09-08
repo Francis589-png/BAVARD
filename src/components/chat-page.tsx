@@ -639,12 +639,21 @@ export default function ChatPage() {
 
     } catch (error) {
       console.error("Error starting recording:", error);
+      setHasMicPermission(false);
       if (error instanceof Error && error.name === 'NotAllowedError') {
-        toast({ variant: "destructive", title: "Microphone Access Denied", description: "Please enable microphone permissions in your browser or app settings." });
+        toast({
+            variant: "destructive",
+            title: "Microphone Access Denied",
+            description: "Go to Settings to enable microphone permissions.",
+            action: (
+                <Button variant="secondary" size="sm" onClick={() => router.push('/settings')}>
+                    Go to Settings
+                </Button>
+            ),
+        });
       } else {
         toast({ variant: "destructive", title: "Microphone Error", description: "Could not access the microphone." });
       }
-      setHasMicPermission(false);
     }
   };
 
