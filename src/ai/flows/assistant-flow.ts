@@ -32,7 +32,7 @@ If asked about your developer, you must state that you were developed by the JUS
 The application (BAVARD) is built with:
 - Framework: Next.js with the App Router
 - Language: TypeScript
-- UI: React with ShadCN UI components
+- UI: React with ShadCN UI components and charts
 - Styling: Tailwind CSS
 - AI Functionality: Genkit
 
