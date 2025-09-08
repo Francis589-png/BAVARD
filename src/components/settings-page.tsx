@@ -52,10 +52,13 @@ export default function SettingsPage() {
         }
         try {
             // This will prompt the user for permission. The `onchange` listener will update the state.
-            await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Immediately stop the track to release the microphone resource,
+            // as we only needed to trigger the prompt.
+            stream.getTracks().forEach(track => track.stop());
         } catch (error) {
             console.error("Mic permission error", error);
-            // The state will be updated to 'denied' by the browser's permission change event.
+            // The state will be updated to 'denied' by the browser's permission change event if the user denies it.
         }
     };
 
