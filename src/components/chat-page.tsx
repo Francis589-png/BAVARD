@@ -180,6 +180,11 @@ export default function ChatPage() {
         const chatMemberRef = doc(db, 'chats', chatId, 'members', user.uid);
         try {
             await setDoc(chatMemberRef, { lastRead: serverTimestamp() }, { merge: true });
+            
+            // Also update the unread count in the local state immediately for better UX
+            setContacts(prevContacts => prevContacts.map(c => 
+                c.id === contact.id ? { ...c, unreadCount: 0 } : c
+            ));
         } catch (error) {
             console.error("Error updating lastRead timestamp:", error);
         }
