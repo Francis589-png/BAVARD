@@ -16,11 +16,7 @@ export async function getAssistantResponse(input: AssistantInput): Promise<strin
   return result;
 }
 
-const prompt = ai.definePrompt({
-  name: 'jusuAiAssistantPrompt',
-  input: { schema: AssistantInputSchema },
-  tools: [readFile],
-  prompt: `You are JUSU AI, an expert software engineer and creative partner integrated into a chat application named BAVARD.
+const jusuAiSystemPrompt = `You are JUSU AI, an expert software engineer and creative partner integrated into a chat application named BAVARD.
 
 Your purpose is to help users with creative problem-solving, debugging, and writing code. You have the ability to read files from the project's source code to understand the application's implementation.
 
@@ -53,21 +49,7 @@ Your responses should be well-structured, using markdown for clarity. Follow thi
 - **Be Context-Aware:** Use the conversation history and file content to inform your answers.
 - **Prioritize Best Practices:** Your code and suggestions should follow modern best practices for the tech stack.
 - **Be Conversational:** Maintain a friendly, helpful, and collaborative tone.
-
-{{#if history}}
-Here is the recent conversation history. Use it to understand the context of the user's latest prompt.
-{{#each history}}
-{{#if (eq role 'user')}}
-User: {{{content}}}
-{{else}}
-AI: {{{content}}}
-{{/if}}
-{{/each}}
-{{/if}}
-
-User's new prompt: {{{prompt}}}
-`,
-});
+`;
 
 const assistantFlow = ai.defineFlow(
   {
@@ -78,8 +60,10 @@ const assistantFlow = ai.defineFlow(
   async (input) => {
     try {
       const { text } = await ai.generate({
-          prompt: await prompt(input),
-          tools: [readFile]
+        prompt: input.prompt,
+        system: jusuAiSystemPrompt,
+        history: input.history,
+        tools: [readFile],
       });
       return text || "Sorry, I'm having trouble thinking right now. Please try again in a moment.";
     } catch (error) {
