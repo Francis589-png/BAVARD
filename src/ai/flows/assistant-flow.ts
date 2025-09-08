@@ -7,7 +7,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { AssistantInputSchema, AssistantOutputSchema, type AssistantInput } from '@/ai/schemas/assistant-schemas';
+import { AssistantInputSchema, type AssistantInput } from '@/ai/schemas/assistant-schemas';
 import { z } from 'zod';
 
 export async function getAssistantResponse(input: AssistantInput): Promise<string> {
@@ -18,7 +18,6 @@ export async function getAssistantResponse(input: AssistantInput): Promise<strin
 const prompt = ai.definePrompt({
   name: 'jusuAiAssistantPrompt',
   input: { schema: AssistantInputSchema },
-  output: { schema: AssistantOutputSchema },
   prompt: `You are JUSU AI, an expert software engineer and creative partner integrated into a chat application named BAVARD.
 
 Your purpose is to help users with creative problem-solving, debugging, and writing code. You are an expert in the app's technical stack.
@@ -58,8 +57,10 @@ const assistantFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      const { output } = await prompt(input);
-      return output?.response || "Sorry, I'm having trouble thinking right now. Please try again in a moment.";
+      const { text } = await ai.generate({
+          prompt: await prompt(input),
+      });
+      return text || "Sorry, I'm having trouble thinking right now. Please try again in a moment.";
     } catch (error) {
       console.error("Error in JUSU AI assistant flow:", error);
       return "I seem to be experiencing a technical difficulty. Please try again later.";

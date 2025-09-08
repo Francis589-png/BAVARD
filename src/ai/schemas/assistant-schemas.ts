@@ -15,11 +15,3 @@ export const AssistantInputSchema = z.object({
   history: z.array(MessageSchema).optional().describe("The previous messages in the conversation."),
 });
 export type AssistantInput = z.infer<typeof AssistantInputSchema>;
-
-
-export const AssistantOutputSchema = z.object({
-    response: z.string().describe("The AI assistant's response to the user's prompt."),
-});
-export type AssistantOutput = z.infer<typeof AssistantOutputSchema>;
-
-  
