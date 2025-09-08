@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff, MicOff, Bot } from "lucide-react";
+import { Loader2, Send, LogOut, MessageCircle, User as UserIcon, Paperclip, Download, UserPlus, Compass, PlusCircle, WifiOff, Film, Mic, StopCircle, Bell, Trash2, MoreVertical, Eraser, HardDrive, Shield, Eye, EyeOff, MicOff, Bot, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,7 @@ import ViewOnceMessage from "./view-once-message";
 import { VerifiedBadge } from "./verified-badge";
 import { JUSU_AI_USER_ID, BAVARD_SYSTEM_UID } from "@/lib/constants";
 import { getAssistantResponse } from "@/ai/flows/assistant-flow";
+import { useSettings } from "@/hooks/use-settings";
 
 
 interface ChatUser {
@@ -75,6 +76,7 @@ interface Message {
     isViewOnce?: boolean;
     viewedBy?: string[];
     isTyping?: boolean;
+    readBy?: string[];
 }
 
 interface Story {
@@ -143,6 +145,7 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isOnline = useOnlineStatus();
   const unreadListenersRef = useRef<Map<string, () => void>>(new Map());
+  const { settings, loading: settingsLoading } = useSettings(user?.uid);
 
 
   useEffect(() => {
@@ -330,27 +333,49 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (user && selectedContact) {
-      const chatId = [user.uid, selectedContact.id].sort().join("_");
-      const messagesCollection = collection(db, "chats", chatId, "messages");
-      const q = query(messagesCollection, orderBy("timestamp", "asc"));
+        const chatId = [user.uid, selectedContact.id].sort().join('_');
+        const messagesCollection = collection(db, 'chats', chatId, 'messages');
+        const q = query(messagesCollection, orderBy('timestamp', 'asc'));
 
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const msgs: Message[] = [];
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            msgs.push({
-                id: doc.id,
-                ...data,
-                timestamp: data.timestamp?.toDate() ?? new Date()
-            } as Message);
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const msgs: Message[] = [];
+            const batch = writeBatch(db);
+            let hasUpdates = false;
+
+            querySnapshot.forEach((doc) => {
+                const data = doc.data() as Message;
+                const message = {
+                    id: doc.id,
+                    ...data,
+                    timestamp: data.timestamp?.toDate() ?? new Date(),
+                };
+
+                // Mark message as read if read receipts are on and it's not from me
+                const isMyMessage = message.senderId === user.uid;
+                if (settings.readReceipts && !isMyMessage && !message.readBy?.includes(user.uid)) {
+                    const messageRef = doc.ref;
+                    batch.update(messageRef, {
+                        readBy: arrayUnion(user.uid)
+                    });
+                    hasUpdates = true;
+                }
+                
+                msgs.push(message);
+            });
+            
+            if (hasUpdates) {
+                batch.commit().catch(console.error);
+            }
+
+            setMessages(msgs);
         });
-        setMessages(msgs);
-      });
-      return () => unsubscribe();
+
+        return () => unsubscribe();
     } else {
-      setMessages([]);
+        setMessages([]);
     }
-  }, [user, selectedContact]);
+  }, [user, selectedContact, settings.readReceipts]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -433,6 +458,7 @@ export default function ChatPage() {
             senderId: user.uid,
             timestamp: serverTimestamp(),
             type: 'text' as const,
+            readBy: [user.uid],
             ...(isViewOnce && { isViewOnce: true, viewedBy: [] })
         };
         await addDoc(messagesCollection, messageDoc);
@@ -459,6 +485,7 @@ export default function ChatPage() {
                 senderId: JUSU_AI_USER_ID,
                 timestamp: serverTimestamp(),
                 type: 'text' as const,
+                readBy: [user.uid, JUSU_AI_USER_ID],
             };
             await addDoc(messagesCollection, aiMessageDoc);
             
@@ -528,6 +555,7 @@ export default function ChatPage() {
             type: messageType,
             url: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
             fileName: resolvedFileName,
+            readBy: [user.uid],
              ...(isViewOnce && { isViewOnce: true, viewedBy: [] })
           };
           await addDoc(messagesCollection, messageDoc);
@@ -776,7 +804,7 @@ export default function ChatPage() {
   };
 
 
-  if (loading || !user) {
+  if (loading || settingsLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -861,6 +889,12 @@ export default function ChatPage() {
                                 </Button>
                             </Link>
                         )}
+                         <Link href="/settings" passHref>
+                          <Button variant="ghost" size="sm" className="w-full justify-start">
+                              <Settings className="mr-2 h-4 w-4" />
+                              Settings
+                          </Button>
+                        </Link>
                     </SidebarGroup>
                     <SidebarSeparator />
                      {storyUsers.length > 0 && (
@@ -972,6 +1006,7 @@ export default function ChatPage() {
                         )}
                        {messages.map((message) => {
                            const isMyMessage = message.senderId === user.uid;
+                           const isRead = message.readBy && message.readBy.includes(selectedContact.id);
 
                            if (message.isTyping) {
                                 return (
@@ -987,38 +1022,45 @@ export default function ChatPage() {
                            }
 
                            return (
-                               <div key={message.id} className={`group flex items-start gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                   {isMyMessage && !isBavardChat && !isJusuAiChat && (
-                                       <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
-                                           <Trash2 className="h-4 w-4" />
-                                       </Button>
-                                   )}
-                                   <div className={`rounded-lg px-4 py-2 max-w-sm relative ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                                        {message.isViewOnce ? (
-                                            <ViewOnceMessage message={message} currentUser={user} onOpen={markMessageAsViewed} />
-                                        ) : (
-                                            <>
-                                                {message.type === 'text' && <p>{message.text}</p>}
-                                                {message.type === 'image' && message.url && (
-                                                    <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
-                                                )}
-                                                {message.type === 'file' && message.url && (
-                                                    <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
-                                                    <Download className="w-4 h-4"/>
-                                                    <span>{message.fileName || 'Download File'}</span>
-                                                    </a>
-                                                )}
-                                                {message.type === 'audio' && message.url && (
-                                                    <audio key={message.url} controls src={message.url} className="max-w-full">
-                                                            Your browser does not support the audio element.
-                                                    </audio>
-                                                )}
-                                            </>
-                                        )}
-                                        <p className="text-xs text-right opacity-70 mt-1">
-                                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </p>
+                               <div key={message.id} className={`group flex flex-col gap-1 ${isMyMessage ? 'items-end' : 'items-start'}`}>
+                                   <div className={`flex items-start gap-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                                       {isMyMessage && !isBavardChat && !isJusuAiChat && (
+                                           <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMessageToDelete(message.id)}>
+                                               <Trash2 className="h-4 w-4" />
+                                           </Button>
+                                       )}
+                                       <div className={`rounded-lg px-4 py-2 max-w-sm relative ${isMyMessage ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                            {message.isViewOnce ? (
+                                                <ViewOnceMessage message={message} currentUser={user} onOpen={markMessageAsViewed} />
+                                            ) : (
+                                                <>
+                                                    {message.type === 'text' && <p>{message.text}</p>}
+                                                    {message.type === 'image' && message.url && (
+                                                        <Image src={message.url} alt={message.fileName || 'Image'} width={300} height={300} className="rounded-md object-cover"/>
+                                                    )}
+                                                    {message.type === 'file' && message.url && (
+                                                        <a href={message.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline">
+                                                        <Download className="w-4 h-4"/>
+                                                        <span>{message.fileName || 'Download File'}</span>
+                                                        </a>
+                                                    )}
+                                                    {message.type === 'audio' && message.url && (
+                                                        <audio key={message.url} controls src={message.url} className="max-w-full">
+                                                                Your browser does not support the audio element.
+                                                        </audio>
+                                                    )}
+                                                </>
+                                            )}
+                                            <p className="text-xs text-right opacity-70 mt-1">
+                                                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                       </div>
                                    </div>
+                                    {isMyMessage && settings.readReceipts && !isJusuAiChat && !isBavardChat && (
+                                        <p className="text-xs text-muted-foreground px-2">
+                                            {isRead ? 'Read' : 'Delivered'}
+                                        </p>
+                                    )}
                                </div>
                            );
                        })}
