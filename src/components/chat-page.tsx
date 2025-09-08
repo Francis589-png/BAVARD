@@ -53,7 +53,6 @@ import { VerifiedBadge } from "./verified-badge";
 import { JUSU_AI_USER_ID, BAVARD_SYSTEM_UID } from "@/lib/constants";
 import { getAssistantResponse } from "@/ai/flows/assistant-flow";
 import { useSettings } from "@/hooks/use-settings";
-import NotificationSound from '/public/audio/notification.mp3';
 
 
 interface ChatUser {
@@ -162,7 +161,7 @@ export default function ChatPage() {
     });
     
     if (typeof window !== 'undefined' && !notificationSoundRef.current) {
-        notificationSoundRef.current = new Audio(NotificationSound);
+        notificationSoundRef.current = new Audio('/audio/notification.mp3');
         notificationSoundRef.current.preload = 'auto';
     }
 
