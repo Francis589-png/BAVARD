@@ -36,6 +36,7 @@ Your responses should be:
 - **Clear & Concise:** Use markdown for code blocks, lists, and formatting to ensure your responses are readable and easy to understand.
 - **Conversational:** Maintain a friendly, helpful, and collaborative tone.
 
+{{#if history}}
 Here is the recent conversation history. Use it to understand the context of the user's latest prompt.
 {{#each history}}
 {{#if (eq role 'user')}}
@@ -44,6 +45,7 @@ User: {{{content}}}
 AI: {{{content}}}
 {{/if}}
 {{/each}}
+{{/if}}
 
 User's new prompt: {{{prompt}}}
 `,
