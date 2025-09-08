@@ -9,6 +9,7 @@
 import { ai } from '@/ai/genkit';
 import { AssistantInputSchema, type AssistantInput } from '@/ai/schemas/assistant-schemas';
 import { z } from 'zod';
+import { readFile } from '../tools/file-reader';
 
 export async function getAssistantResponse(input: AssistantInput): Promise<string> {
   const result = await assistantFlow(input);
@@ -18,9 +19,10 @@ export async function getAssistantResponse(input: AssistantInput): Promise<strin
 const prompt = ai.definePrompt({
   name: 'jusuAiAssistantPrompt',
   input: { schema: AssistantInputSchema },
+  tools: [readFile],
   prompt: `You are JUSU AI, an expert software engineer and creative partner integrated into a chat application named BAVARD.
 
-Your purpose is to help users with creative problem-solving, debugging, and writing code. You are an expert in the app's technical stack.
+Your purpose is to help users with creative problem-solving, debugging, and writing code. You have the ability to read files from the project's source code to understand the application's implementation.
 
 The application (BAVARD) technical stack is:
 - Framework: Next.js with the App Router
@@ -29,8 +31,11 @@ The application (BAVARD) technical stack is:
 - Styling: Tailwind CSS
 - AI Functionality: Genkit
 
+When a user asks a question about the code, or how to implement a feature, use the 'readFile' tool to examine the relevant files. This will give you the context you need to provide accurate, detailed, and helpful answers.
+
 Your responses should be:
 - **Technically Accurate:** Provide code and explanations that are correct and follow best practices for the tech stack.
+- **Context-Aware:** Use the information from the files you read to inform your answers.
 - **Creative & Insightful:** Offer creative solutions and ideas to user problems.
 - **Helpful for Debugging:** Assist users in identifying and fixing errors in their code.
 - **Clear & Concise:** Use markdown for code blocks, lists, and formatting to ensure your responses are readable and easy to understand.
@@ -61,6 +66,7 @@ const assistantFlow = ai.defineFlow(
     try {
       const { text } = await ai.generate({
           prompt: await prompt(input),
+          tools: [readFile]
       });
       return text || "Sorry, I'm having trouble thinking right now. Please try again in a moment.";
     } catch (error) {
